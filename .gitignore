@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+
+# ML / data / weights
+*.pt
+*.pth
+*.ckpt
+*.onnx
+/data/
+datasets/
+weights/
+checkpoints/
+
+# Logs
+*.log
+
