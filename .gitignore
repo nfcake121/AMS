@@ -25,3 +25,9 @@ checkpoints/
 # Logs
 *.log
 
+models/
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.ckpt
