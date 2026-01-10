@@ -1,0 +1,15 @@
+{
+  "type": "sofa",
+  "style": "scandi",
+  "layout": "straight",
+  "seat_height_mm": 440,
+  "seat_depth_mm": 600,
+  "seat_width_range_mm": [500, 700],
+  "leg_family": "tapered_cone",
+  "armrests": "both",
+  "preferences": {
+    "leg_thickness_bias": "thin",
+    "arm_profile": "rounded_bottom",
+    "seat_softness": "medium"
+  }
+}
