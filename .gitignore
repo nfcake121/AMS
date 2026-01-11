@@ -38,3 +38,18 @@ models/
 *.pt
 *.pth
 *.ckpt
+# Virtual environments (local only)
+venv/
+.venv/
+
+# Outputs
+out/
+!out/
+out/*
+!out/.gitkeep
+!out/models/
+!out/models/.gitkeep
+!out/glb/
+!out/glb/.gitkeep
+!out/logs/
+!out/logs/.gitkeep
