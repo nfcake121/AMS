@@ -1,17 +1,14 @@
 """Wrapper around resolve_sofa for building resolved IR."""
 
-# TODO: import resolve_sofa when implementation is available.
+from src.schema import SofaRequest, resolve_sofa
 
-def resolve_request_to_ir(sofa_request):
+
+def resolve_request_to_ir(sofa_request: SofaRequest) -> dict:
     """Resolve a SofaRequest into an intermediate representation."""
-    # TODO: call resolve_sofa and return resolved IR.
-    return {
-        "request": sofa_request,
-        "resolved": None,
-    }
+    resolved = resolve_sofa(sofa_request)
+    return resolved.model_dump()
 
 
-def resolve_sofa_request(sofa_request):
+def resolve_sofa_request(sofa_request: SofaRequest) -> dict:
     """Backward-compatible wrapper for resolving SofaRequest."""
-    # TODO: remove when callers migrate to resolve_request_to_ir.
     return resolve_request_to_ir(sofa_request)
