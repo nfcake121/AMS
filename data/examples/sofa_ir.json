@@ -1,6 +1,66 @@
 {
   "version": "0.1",
-  "id": "sofa_ir_example",
-  "components": [],
-  "materials": []
+  "id": "sofa_ir_synth_scandi_slats_backslats_v01",
+  "style": "scandi",
+  "layout": "straight",
+  "seat_count": 3,
+
+  "seat_height_mm": 445,
+  "seat_depth_mm": 710,
+  "seat_width_mm": 610,
+
+  "legs": {
+    "family": "tapered_cone",
+    "height_mm": 150,
+    "params": {
+      "r_top": 20,
+      "r_bottom": 14
+    }
+  },
+
+  "arms": {
+    "type": "both",
+    "width_mm": 130,
+    "profile": "box"
+  },
+
+  "frame": {
+    "thickness_mm": 38,
+    "back_thickness_mm": 95,
+    "back_height_above_seat_mm": 520
+  },
+
+  "slats": {
+    "enabled": true,
+    "count": 20,
+    "width_mm": 54,
+    "thickness_mm": 12,
+    "arc_height_mm": 20,
+    "arc_sign": -1,
+    "margin_x_mm": 52,
+    "margin_y_mm": 78,
+    "clearance_mm": 4,
+    "mount_mode": "rests_on_plane",
+    "mount_offset_mm": 3,
+    "rail_inset_mm": 3,
+    "rail_inset_y_mm": 22,
+    "rail_height_mm": 32,
+    "rail_width_mm": 32
+  },
+
+  "back_support": {
+    "mode": "slats",
+    "height_above_seat_mm": 560,
+    "thickness_mm": 85,
+    "offset_y_mm": 12,
+    "margin_x_mm": 46,
+    "margin_z_mm": 38,
+    "slats": {
+      "count": 9,
+      "width_mm": 42,
+      "thickness_mm": 14,
+      "arc_height_mm": 8,
+      "arc_sign": -1
+    }
+  }
 }

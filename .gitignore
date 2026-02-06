@@ -45,7 +45,7 @@ venv/
 # Outputs
 out/
 !out/
-out/*
+out/**
 !out/.gitkeep
 !out/models/
 !out/models/.gitkeep
