@@ -2,12 +2,24 @@
 
 Usage (called by export_blender.py):
 blender --background --python tools/blender/run_builder_v01.py -- path/to/sofa_ir.json
+
+This version FIXES slat bending by doing vertex-level bending (bmesh),
+instead of relying on SimpleDeform (which can appear "flat" in some pipeline cases).
+
+Env vars:
+- IR_PATH: override IR path
+- BLEND_PATH: if set, saves .blend to that path
+- DEBUG_SLAT=1: adds an extra DEBUG_SLAT
+- APPLY_DEBUG_SLAT=1: bakes modifiers for DEBUG_SLAT
+- APPLY_ALL_SLATS=1: bakes modifiers for ALL slats (optional)
+- DEBUG_JSON=1: writes debug JSON metrics/validation log
 """
 
 import json
 import math
 import os
 import sys
+from typing import Optional, Tuple
 
 # --- ensure repo root in sys.path so "src.*" imports work ---
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -17,6 +29,10 @@ if REPO_ROOT not in sys.path:
 from src.builders.blender import builder_v01 as builder_module  # noqa: E402
 from src.builders.blender.builder_v01 import build_plan_from_ir  # noqa: E402
 
+
+# -------------------------
+# small helpers
+# -------------------------
 
 def _read_ir_path() -> str:
     """Resolve IR path from env or argv (after '--')."""
@@ -37,8 +53,7 @@ def _read_ir_path() -> str:
 
 def _clear_scene() -> None:
     """Start from an empty scene."""
-    import bpy  # type: ignore  # Blender-only
-
+    import bpy  # type: ignore
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
 
@@ -47,69 +62,17 @@ def _ensure_mm_units() -> None:
 
     Blender units: meters. So 1 mm = 0.001 m.
     """
-    import bpy  # type: ignore  # Blender-only
-
+    import bpy  # type: ignore
     scene = bpy.context.scene
     scene.unit_settings.system = "METRIC"
     scene.unit_settings.scale_length = 1.0
 
 
 def _mm_to_m(v):
-    """Convert tuple(mm) -> tuple(m)."""
-    return tuple(x / 1000.0 for x in v)
+    return tuple(float(x) / 1000.0 for x in v)
 
 
-def _create_cube(name, dimensions_mm, location_mm):
-    import bpy  # type: ignore  # Blender-only
-
-    bpy.ops.mesh.primitive_cube_add(size=1.0, location=_mm_to_m(location_mm))
-    obj = bpy.context.active_object
-    obj.name = name
-    obj.dimensions = _mm_to_m(dimensions_mm)
-    bpy.context.view_layer.update()
-    return obj
-
-
-def _create_cylinder(name, radius_mm, height_mm, location_mm):
-    import bpy  # type: ignore  # Blender-only
-
-    bpy.ops.mesh.primitive_cylinder_add(
-        radius=radius_mm / 1000.0,
-        depth=height_mm / 1000.0,
-        location=_mm_to_m(location_mm),
-    )
-    obj = bpy.context.active_object
-    obj.name = name
-    return obj
-
-
-def _create_cone(name, r_top_mm, r_bottom_mm, height_mm, location_mm):
-    import bpy  # type: ignore  # Blender-only
-
-    bpy.ops.mesh.primitive_cone_add(
-        radius1=r_bottom_mm / 1000.0,
-        radius2=r_top_mm / 1000.0,
-        depth=height_mm / 1000.0,
-        location=_mm_to_m(location_mm),
-    )
-    obj = bpy.context.active_object
-    obj.name = name
-    return obj
-
-
-def _create_anchor(name, location_mm):
-    import bpy  # type: ignore  # Blender-only
-
-    empty = bpy.data.objects.new(name, None)
-    empty.empty_display_type = "PLAIN_AXES"
-    empty.location = _mm_to_m(location_mm)
-    bpy.context.scene.collection.objects.link(empty)
-    return empty
-
-
-def _apply_rotation_deg(obj, rotation_deg):
-    import math
-
+def _apply_rotation_deg(obj, rotation_deg) -> None:
     if not rotation_deg:
         return
     try:
@@ -121,37 +84,108 @@ def _apply_rotation_deg(obj, rotation_deg):
     obj.rotation_euler = (math.radians(rx), math.radians(ry), math.radians(rz))
 
 
-def _create_slat_object(
-    name,
-    width_mm,
-    length_mm,
-    thickness_mm,
+def _bake_object_modifiers(obj) -> None:
+    """Bake evaluated mesh into obj.data and clear modifiers."""
+    import bpy  # type: ignore
+
+    bpy.context.view_layer.update()
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    try:
+        depsgraph.update()
+    except Exception:
+        pass
+
+    eval_obj = obj.evaluated_get(depsgraph)
+    new_mesh = bpy.data.meshes.new_from_object(
+        eval_obj,
+        depsgraph=depsgraph,
+        preserve_all_data_layers=True,
+    )
+    obj.data = new_mesh
+    obj.modifiers.clear()
+
+
+# -------------------------
+# primitives
+# -------------------------
+
+def _create_cube(name, dimensions_mm, location_mm):
+    import bpy  # type: ignore
+    bpy.ops.mesh.primitive_cube_add(size=1.0, location=_mm_to_m(location_mm))
+    obj = bpy.context.active_object
+    obj.name = name
+    obj.dimensions = _mm_to_m(dimensions_mm)
+    bpy.context.view_layer.update()
+    return obj
+
+
+def _create_cylinder(name, radius_mm, height_mm, location_mm):
+    import bpy  # type: ignore
+    bpy.ops.mesh.primitive_cylinder_add(
+        radius=float(radius_mm) / 1000.0,
+        depth=float(height_mm) / 1000.0,
+        location=_mm_to_m(location_mm),
+    )
+    obj = bpy.context.active_object
+    obj.name = name
+    return obj
+
+
+def _create_cone(name, r_top_mm, r_bottom_mm, height_mm, location_mm):
+    import bpy  # type: ignore
+    bpy.ops.mesh.primitive_cone_add(
+        radius1=float(r_bottom_mm) / 1000.0,
+        radius2=float(r_top_mm) / 1000.0,
+        depth=float(height_mm) / 1000.0,
+        location=_mm_to_m(location_mm),
+    )
+    obj = bpy.context.active_object
+    obj.name = name
+    return obj
+
+
+def _create_anchor(name, location_mm):
+    import bpy  # type: ignore
+    empty = bpy.data.objects.new(name, None)
+    empty.empty_display_type = "PLAIN_AXES"
+    empty.location = _mm_to_m(location_mm)
+    bpy.context.scene.collection.objects.link(empty)
+    return empty
+
+
+# -------------------------
+# slats: mesh + vertex bend
+# -------------------------
+
+def _create_slat_mesh(
+    name: str,
+    width_mm: float,
+    length_mm: float,
     location_mm,
     rotation_deg,
-    segments_len,
-    segments_w=2,
+    segments_len: int,
+    segments_w: int,
+    orientation: str,
 ):
-    import bpy  # type: ignore  # Blender-only
-    import bmesh  # type: ignore  # Blender-only
+    """Creates a grid plane:
+    - horizontal: plane in XY (length along +Y), normal ~ +Z
+    - vertical:   plane in XZ (length along +Z), normal ~ +Y (or -Y)
+    """
+    import bpy  # type: ignore
+    import bmesh  # type: ignore
 
-    try:
-        segments_len = int(segments_len)
-    except (TypeError, ValueError):
-        segments_len = 12
-    try:
-        segments_w = int(segments_w)
-    except (TypeError, ValueError):
-        segments_w = 2
-    segments_len = max(1, segments_len)
-    segments_w = max(1, segments_w)
+    segments_len = max(1, int(segments_len))
+    segments_w = max(1, int(segments_w))
 
     width_m = float(width_mm) / 1000.0
     length_m = float(length_mm) / 1000.0
-    _ = thickness_mm  # thickness is handled by Solidify modifier later
 
     bm = bmesh.new()
+
+    # Start with unit grid in XY centered at origin
     bmesh.ops.create_grid(bm, x_segments=segments_w, y_segments=segments_len, size=1.0)
 
+    # Normalize to target width/length in local space
     if bm.verts:
         xs = [v.co.x for v in bm.verts]
         ys = [v.co.y for v in bm.verts]
@@ -163,15 +197,24 @@ def _create_slat_object(
         ext_y = max_y - min_y
         sx = (width_m / ext_x) if ext_x != 0.0 else 1.0
         sy = (length_m / ext_y) if ext_y != 0.0 else 1.0
+
         for v in bm.verts:
             v.co.x = (v.co.x - cx) * sx
             v.co.y = (v.co.y - cy) * sy
             v.co.z = 0.0
 
+    # If vertical: rotate XY plane into XZ (so length becomes Z)
+    if orientation == "vertical":
+        from mathutils import Matrix  # type: ignore
+        rot_m = Matrix.Rotation(math.radians(90.0), 4, "X")  # Y -> Z
+        for v in bm.verts:
+            v.co = rot_m @ v.co
+
     mesh = bpy.data.meshes.new(name)
     bm.to_mesh(mesh)
     bm.free()
     mesh.update()
+
     for poly in mesh.polygons:
         poly.use_smooth = True
 
@@ -183,30 +226,104 @@ def _create_slat_object(
     return obj
 
 
+def _bend_vertices_arc(
+    obj,
+    orientation: str,
+    length_mm: float,
+    arc_height_mm: float,
+    arc_sign: float,
+) -> Tuple[float, float]:
+    """Bend vertices into a circular arc (sagitta).
+    Returns (radius_m, angle_rad).
+    - horizontal: length along local Y, sag applied to local Z
+    - vertical:   length along local Z, sag applied to local Y  (back curvature)
+    """
+    import bmesh  # type: ignore
+
+    if arc_height_mm <= 0.0 or length_mm <= 0.0:
+        return (0.0, 0.0)
+
+    L = float(length_mm) / 1000.0
+    h = float(arc_height_mm) / 1000.0
+    sign = -1.0 if arc_sign < 0 else 1.0
+
+    # radius from sagitta
+    # R = L^2/(8h) + h/2
+    R = (L * L) / (8.0 * h) + (h / 2.0)
+    if not math.isfinite(R) or R <= 0:
+        return (0.0, 0.0)
+
+    angle = L / R
+    angle = max(-math.pi, min(math.pi, angle))
+
+    half = L / 2.0
+
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+
+    for v in bm.verts:
+        if orientation == "vertical":
+            t = v.co.z  # along length
+        else:
+            t = v.co.y
+
+        t = max(-half, min(half, t))
+
+        # sag = R - sqrt(R^2 - t^2)
+        under = max(0.0, (R * R - t * t))
+        sag = R - math.sqrt(under)
+
+        if orientation == "vertical":
+            v.co.y += sag * sign
+        else:
+            v.co.z += sag * sign
+
+    bm.to_mesh(obj.data)
+    bm.free()
+    obj.data.update()
+
+    return (R, angle)
+
+
+def _axis_ranges_world(mesh, matrix_world):
+    if not mesh or len(mesh.vertices) == 0:
+        return None
+    xs, ys, zs = [], [], []
+    for v in mesh.vertices:
+        w = matrix_world @ v.co
+        xs.append(w.x)
+        ys.append(w.y)
+        zs.append(w.z)
+    return (min(xs), max(xs)), (min(ys), max(ys)), (min(zs), max(zs))
+
+
+# -------------------------
+# plan primitive creator
+# -------------------------
+
 def _create_primitive(p, legs_params=None):
     """Create geometry for a Primitive from builder_v01 plan."""
+    import bpy  # type: ignore
+
     shape = getattr(p, "shape", "cube")
     dims = getattr(p, "dimensions_mm", (100, 100, 100))
     loc = getattr(p, "location_mm", (0, 0, 0))
     rot = getattr(p, "rotation_deg", (0.0, 0.0, 0.0))
 
-    # v0.1: cube/beam/board share the same box geometry.
     if shape in {"cube", "beam", "board"}:
         obj = _create_cube(p.name, dims, loc)
         _apply_rotation_deg(obj, rot)
         return obj
 
     if shape == "slat":
-        import bpy  # type: ignore  # Blender-only
-
+        # defaults
         arc_height_mm = 0.0
         arc_sign = -1.0
         orientation = "horizontal"
-        subdiv_level = None
-        subdiv_cuts = 48
+        subdiv_cuts = 64
         edge_radius_mm = 1.0
-        solidify_mm = 0.0
         solidify_offset = 1.0
+
         params = getattr(p, "params", None)
         if isinstance(params, dict):
             try:
@@ -222,13 +339,9 @@ def _create_primitive(p, legs_params=None):
             except (TypeError, ValueError):
                 orientation = "horizontal"
             try:
-                subdiv_level = int(params.get("subdiv_level"))
+                subdiv_cuts = int(params.get("subdiv_cuts", 64))
             except (TypeError, ValueError):
-                subdiv_level = None
-            try:
-                subdiv_cuts = int(params.get("subdiv_cuts", 48))
-            except (TypeError, ValueError):
-                subdiv_cuts = 48
+                subdiv_cuts = 64
             try:
                 edge_radius_mm = float(params.get("edge_radius_mm", 1.0))
             except (TypeError, ValueError):
@@ -238,147 +351,71 @@ def _create_primitive(p, legs_params=None):
             except (TypeError, ValueError):
                 solidify_offset = 1.0
 
-        if orientation == "seat":
+        if orientation in {"seat"}:
+            orientation = "horizontal"
+        if orientation not in {"horizontal", "vertical"}:
             orientation = "horizontal"
 
         arc_sign = -1.0 if arc_sign < 0 else 1.0
+        solidify_offset = max(-1.0, min(1.0, solidify_offset))
 
+        # dims mapping
         if orientation == "vertical":
-            # width -> X, length -> Z, thickness -> Y
+            # width X, thickness Y, length Z  (like your older logic)
             width_mm = float(dims[0])
-            length_mm = float(dims[2])
             thickness_mm = float(dims[1])
-            deform_axis = "Z"
+            length_mm = float(dims[2])
         else:
-            # width -> X, length -> Y, thickness -> Z
-            orientation = "horizontal"
+            # width X, length Y, thickness Z
             width_mm = float(dims[0])
             length_mm = float(dims[1])
             thickness_mm = float(dims[2])
-            deform_axis = "Y"
 
-        try:
-            subdiv_cuts_int = int(subdiv_cuts)
-        except (TypeError, ValueError):
-            subdiv_cuts_int = 48
-        segments_len = max(12, min(200, subdiv_cuts_int * 2))
+        # mesh density: must be high along length for nice arc
+        subdiv_cuts = max(8, min(200, int(subdiv_cuts)))
+        segments_len = max(40, min(240, subdiv_cuts * 2))
+        segments_w = 4
 
-        obj = _create_slat_object(
-            p.name,
-            width_mm,
-            length_mm,
-            thickness_mm,
-            loc,
-            rot,
-            segments_len,
-            segments_w=2,
+        obj = _create_slat_mesh(
+            name=p.name,
+            width_mm=width_mm,
+            length_mm=length_mm,
+            location_mm=loc,
+            rotation_deg=rot,
+            segments_len=segments_len,
+            segments_w=segments_w,
+            orientation=orientation,
         )
 
-        if orientation == "vertical":
-            # Rotate plane into XZ so thickness (Solidify) is along Y and bend axis can be Z.
-            import bmesh  # type: ignore  # Blender-only
-            from mathutils import Matrix  # type: ignore  # Blender-only
+        # do vertex bending (the fix)
+        radius_m, angle_rad = (0.0, 0.0)
+        if arc_height_mm > 0.0 and length_mm > 0.0:
+            radius_m, angle_rad = _bend_vertices_arc(
+                obj=obj,
+                orientation=orientation,
+                length_mm=length_mm,
+                arc_height_mm=arc_height_mm,
+                arc_sign=arc_sign,
+            )
 
-            bm = bmesh.new()
-            bm.from_mesh(obj.data)
-            rot_m = Matrix.Rotation(math.radians(90.0), 4, "X")
-            for v in bm.verts:
-                v.co = rot_m @ v.co
-            bm.to_mesh(obj.data)
-            bm.free()
-            obj.data.update()
-
-        bpy.context.view_layer.update()
-
-        cuts_used = segments_len
-        verts_before = len(obj.data.vertices)
-        polys_before = len(obj.data.polygons)
-        verts_after_subdiv = verts_before
-        polys_after_subdiv = polys_before
-        solidify_mm = thickness_mm
-
-        solidify_offset = max(-1.0, min(1.0, solidify_offset))
-
-        if solidify_mm > 0.0:
+        # solidify thickness (works from normals of the plane)
+        if thickness_mm > 0.0:
             solid = obj.modifiers.new(name="Solidify", type="SOLIDIFY")
-            solid.thickness = solidify_mm / 1000.0
+            solid.thickness = float(thickness_mm) / 1000.0
             solid.offset = solidify_offset
             solid.use_even_offset = True
 
-        angle_rad = None
-        radius_mm = None
-        if arc_height_mm > 0.0 and length_mm > 0.0:
-            arc_height_mm = min(max(0.0, arc_height_mm), length_mm / 2.0)
-            # Sagitta formula -> bend angle in radians (clamped for stability).
-            radius_mm = (length_mm * length_mm) / (8.0 * arc_height_mm) + (arc_height_mm / 2.0)
-            if radius_mm > 0.0 and math.isfinite(radius_mm):
-                angle_rad = length_mm / radius_mm
-                angle_rad = max(-math.pi, min(math.pi, angle_rad))
-            else:
-                angle_rad = None
-
-            helpers = bpy.data.collections.get("_helpers")
-            if helpers is None:
-                helpers = bpy.data.collections.new("_helpers")
-                bpy.context.scene.collection.children.link(helpers)
-                helpers.hide_viewport = True
-                helpers.hide_render = True
-            origin_name = f"{p.name}_bend_origin"
-            origin = bpy.data.objects.get(origin_name)
-            if origin is None:
-                origin = bpy.data.objects.new(origin_name, None)
-                origin.empty_display_type = "PLAIN_AXES"
-                helpers.objects.link(origin)
-            from mathutils import Vector  # type: ignore  # Blender-only
-
-            half_len_m = (length_mm / 1000.0) / 2.0
-            if deform_axis == "Y":
-                origin.location = obj.matrix_world @ Vector((0.0, -half_len_m, 0.0))
-            else:
-                origin.location = obj.matrix_world @ Vector((0.0, 0.0, -half_len_m))
-            # Keep origin axes aligned with the slat so deform_axis behaves predictably.
-            origin.rotation_euler = obj.rotation_euler
-            origin.hide_viewport = True
-            origin.hide_render = True
-            if obj.name == "DEBUG_SLAT":
-                origin_loc = origin.location
-                obj_loc = obj.location
-                print(
-                    "DEBUG_SLAT_ORIGIN "
-                    f"name={obj.name} axis={deform_axis} length_mm={length_mm} "
-                    f"origin=({origin_loc.x:.4f}, {origin_loc.y:.4f}, {origin_loc.z:.4f}) "
-                    f"obj=({obj_loc.x:.4f}, {obj_loc.y:.4f}, {obj_loc.z:.4f})"
-                )
-
-            arc_sign = -1.0 if arc_sign < 0 else 1.0
-            if angle_rad is not None:
-                mod = obj.modifiers.new(name="Bend", type="SIMPLE_DEFORM")
-                mod.deform_method = "BEND"
-                mod.deform_axis = deform_axis
-                mod.angle = angle_rad * arc_sign
-                mod.origin = origin
-                mod.show_viewport = True
-                mod.show_render = True
-                if hasattr(mod, "show_in_editmode"):
-                    mod.show_in_editmode = True
-                if hasattr(mod, "show_on_cage"):
-                    mod.show_on_cage = True
-                mod_types = [m.type for m in obj.modifiers]
-                print(
-                    "DEBUG_SLAT "
-                    f"{obj.name} axis={deform_axis} angle={mod.angle} origin={origin.name} mods={mod_types}"
-                )
-                bpy.context.view_layer.update()
-
+        # bevel edges
         if edge_radius_mm > 0.0:
             bevel = obj.modifiers.new(name="Bevel", type="BEVEL")
-            bevel.width = edge_radius_mm / 1000.0
+            bevel.width = float(edge_radius_mm) / 1000.0
             bevel.segments = 2
             bevel.limit_method = "ANGLE"
             bevel.angle_limit = math.radians(40.0)
             if hasattr(bevel, "harden_normals"):
                 bevel.harden_normals = True
 
+        # normals
         wn = obj.modifiers.new(name="WeightedNormal", type="WEIGHTED_NORMAL")
         wn.keep_sharp = True
         wn.weight = 50
@@ -387,69 +424,61 @@ def _create_primitive(p, legs_params=None):
         if hasattr(obj.data, "auto_smooth_angle"):
             obj.data.auto_smooth_angle = math.radians(40.0)
 
-        try:
+        # optional baking
+        if os.environ.get("APPLY_ALL_SLATS") == "1":
+            _bake_object_modifiers(obj)
+
+        # debug ranges (base/eval)
+        if obj.name in {"DEBUG_SLAT", "slat_1"} or os.environ.get("DEBUG_SLAT") == "1":
+            bpy.context.view_layer.update()
             depsgraph = bpy.context.evaluated_depsgraph_get()
             eval_obj = obj.evaluated_get(depsgraph)
             eval_mesh = eval_obj.to_mesh()
-            print(
-                f"DEBUG_SLAT_EVAL {obj.name} verts={len(eval_mesh.vertices)} "
-                f"polys={len(eval_mesh.polygons)}"
-            )
-            eval_obj.to_mesh_clear()
-        except Exception as exc:
-            print(f"DEBUG_SLAT_EVAL {obj.name} error={exc}")
 
-        angle_rad_value = angle_rad if angle_rad is not None else 0.0
-        bend_angle = angle_rad_value * (-1.0 if arc_sign < 0 else 1.0)
-        print(
-            f"[slat] name={p.name} bend_angle={bend_angle} axis={deform_axis} "
-            f"arc_height_mm={arc_height_mm} pos_y={obj.location.y:.3f} pos_z={obj.location.z:.3f}"
-        )
-        if verts_before <= 0:
-            verts_before = len(obj.data.vertices)
-        if polys_before <= 0:
-            polys_before = len(obj.data.polygons)
-        if verts_after_subdiv <= 0:
-            verts_after_subdiv = len(obj.data.vertices)
-        if polys_after_subdiv <= 0:
-            polys_after_subdiv = len(obj.data.polygons)
-        radius_value = radius_mm if radius_mm is not None else 0.0
-        print(
-            f"DEBUG_SLAT_SUBDIV {obj.name} cuts={cuts_used} axis={deform_axis} "
-            f"angle={bend_angle} verts={verts_after_subdiv}"
-        )
-        mod_list = [f"{m.name}:{m.type}" for m in obj.modifiers]
-        print(f"SLAT_VERTS:{p.name} verts={len(obj.data.vertices)}")
-        print(f"SLAT_MODS:{mod_list}")
-        print(
-            f"[slat] name={p.name} dims={dims} orientation={orientation} "
-            f"arc_height_mm={arc_height_mm} arc_sign={arc_sign} radius_mm={radius_value} "
-            f"angle_rad={angle_rad_value} "
-            f"verts_before={verts_before} polys_before={polys_before} "
-            f"verts_after={verts_after_subdiv} polys_after={polys_after_subdiv}"
-        )
-        bend_angle = (angle_rad * arc_sign) if angle_rad is not None else 0.0
-        world_loc = obj.matrix_world.to_translation()
-        print(
-            f"[slat_debug] name={p.name} bend_angle_rad={bend_angle} "
-            f"world_loc=({world_loc.x:.3f}, {world_loc.y:.3f}, {world_loc.z:.3f}) "
-            f"orientation={orientation}"
-        )
-        print(
-            f"[slat] {p.name} dims={dims} orientation={orientation} subdiv_level={subdiv_level} "
-            f"arc_height_mm={arc_height_mm} angle_rad={angle_rad} solidify_mm={solidify_mm} "
-            f"bevel_width_m={edge_radius_mm / 1000.0 if edge_radius_mm > 0.0 else 0.0}"
-        )
+            base_ranges = _axis_ranges_world(obj.data, obj.matrix_world)
+            eval_ranges = _axis_ranges_world(eval_mesh, eval_obj.matrix_world)
+
+            print(
+                f"[slat] name={obj.name} orientation={orientation} arc_height_mm={arc_height_mm} "
+                f"radius_m={radius_m:.6f} angle_rad={angle_rad:.6f} "
+                f"verts={len(obj.data.vertices)} mods={[m.type for m in obj.modifiers]}"
+            )
+            if base_ranges and eval_ranges:
+                base_spans = (
+                    base_ranges[0][1] - base_ranges[0][0],
+                    base_ranges[1][1] - base_ranges[1][0],
+                    base_ranges[2][1] - base_ranges[2][0],
+                )
+                eval_spans = (
+                    eval_ranges[0][1] - eval_ranges[0][0],
+                    eval_ranges[1][1] - eval_ranges[1][0],
+                    eval_ranges[2][1] - eval_ranges[2][0],
+                )
+                dx = abs(eval_spans[0] - base_spans[0])
+                dy = abs(eval_spans[1] - base_spans[1])
+                dz = abs(eval_spans[2] - base_spans[2])
+                print(
+                    f"SLAT_RANGES_BASE x=({base_ranges[0][0]:.6f},{base_ranges[0][1]:.6f}) "
+                    f"y=({base_ranges[1][0]:.6f},{base_ranges[1][1]:.6f}) "
+                    f"z=({base_ranges[2][0]:.6f},{base_ranges[2][1]:.6f})"
+                )
+                print(
+                    f"SLAT_RANGES_EVAL x=({eval_ranges[0][0]:.6f},{eval_ranges[0][1]:.6f}) "
+                    f"y=({eval_ranges[1][0]:.6f},{eval_ranges[1][1]:.6f}) "
+                    f"z=({eval_ranges[2][0]:.6f},{eval_ranges[2][1]:.6f})"
+                )
+                print(f"SLAT_RANGE_DELTAS dx={dx:.6f} dy={dy:.6f} dz={dz:.6f}")
+
+            eval_obj.to_mesh_clear()
+
         return obj
 
     if shape == "cylindrical":
-        # dims: (thickness, thickness, height)
-        obj = _create_cylinder(p.name, radius_mm=dims[0] / 2.0, height_mm=dims[2], location_mm=loc)
+        obj = _create_cylinder(p.name, radius_mm=float(dims[0]) / 2.0, height_mm=float(dims[2]), location_mm=loc)
         _apply_rotation_deg(obj, rot)
         return obj
 
     if shape == "tapered_cone":
-        # prefer legs.params radii when available
         r_top = None
         r_bottom = None
         if isinstance(legs_params, dict):
@@ -462,10 +491,9 @@ def _create_primitive(p, legs_params=None):
                 r_top = None
                 r_bottom = None
         if r_top is None or r_bottom is None:
-            # simple default taper if params not encoded in primitive
-            r_top = max(6.0, dims[0] * 0.35)
-            r_bottom = max(r_top + 2.0, dims[0] * 0.6)
-        obj = _create_cone(p.name, r_top_mm=r_top, r_bottom_mm=r_bottom, height_mm=dims[2], location_mm=loc)
+            r_top = max(6.0, float(dims[0]) * 0.35)
+            r_bottom = max(r_top + 2.0, float(dims[0]) * 0.6)
+        obj = _create_cone(p.name, r_top_mm=r_top, r_bottom_mm=r_bottom, height_mm=float(dims[2]), location_mm=loc)
         _apply_rotation_deg(obj, rot)
         return obj
 
@@ -475,8 +503,12 @@ def _create_primitive(p, legs_params=None):
     return obj
 
 
+# -------------------------
+# main
+# -------------------------
+
 def main():
-    import bpy  # type: ignore  # Blender-only
+    import bpy  # type: ignore
 
     ir_path = _read_ir_path()
     if not ir_path:
@@ -504,35 +536,31 @@ def main():
     for prim in plan.primitives:
         _create_primitive(prim, legs_params=legs_params)
 
+    # optional debug slat
     if os.environ.get("DEBUG_SLAT") == "1":
         try:
             debug_slat = _create_primitive(
                 builder_module.Primitive(
                     name="DEBUG_SLAT",
                     shape="slat",
-                    dimensions_mm=(60.0, 600.0, 12.0),
+                    dimensions_mm=(60.0, 600.0, 12.0),  # width, length, thickness (horizontal)
                     location_mm=(0.0, 900.0, 300.0),
                     rotation_deg=(0.0, 0.0, 0.0),
                     params={
                         "arc_height_mm": 35.0,
                         "arc_sign": -1.0,
                         "orientation": "horizontal",
-                        "subdiv_cuts": 48,
+                        "subdiv_cuts": 64,
                         "edge_radius_mm": 1.0,
-                        "solidify_mm": 0.0,
+                        "solidify_offset": 1.0,
                     },
                 ),
                 legs_params=legs_params,
             )
-            print(f"DEBUG_SLAT_CREATED:{debug_slat.name}")
-            print(f"DEBUG_SLAT_BBOX:{debug_slat.bound_box}")
-            print(f"DEBUG_SLAT_VERTS:{len(debug_slat.data.vertices)}")
+            print(f"DEBUG_SLAT_CREATED:{debug_slat.name} verts={len(debug_slat.data.vertices)}")
             if os.environ.get("APPLY_DEBUG_SLAT") == "1":
-                depsgraph = bpy.context.evaluated_depsgraph_get()
-                eval_obj = debug_slat.evaluated_get(depsgraph)
-                new_mesh = bpy.data.meshes.new_from_object(eval_obj, depsgraph=depsgraph)
-                debug_slat.data = new_mesh
-                debug_slat.modifiers.clear()
+                _bake_object_modifiers(debug_slat)
+                print("DEBUG_SLAT_BAKED:1")
         except Exception as exc:
             print(f"DEBUG_SLAT_CREATED:error={exc}")
 
@@ -546,6 +574,36 @@ def main():
     beam_count = sum(1 for name in object_names if name.startswith("beam_"))
     rail_count = sum(1 for name in object_names if name.startswith("rail_"))
     print(f"OBJECT_PREFIX_COUNTS slat_={slat_count} beam_={beam_count} rail_={rail_count}")
+
+    if os.environ.get("DEBUG_JSON") == "1":
+        try:
+            from tools.blender.debug.io import ir_sha256, make_run_id, save_run_log  # noqa: E402
+            from tools.blender.debug.metrics import collect_scene_metrics  # noqa: E402
+            from tools.blender.debug.validators import validate  # noqa: E402
+
+            debug_run_id = make_run_id()
+            metrics = collect_scene_metrics()
+            validation = validate(metrics, ir)
+            debug_payload = {
+                "run_id": debug_run_id,
+                "source": "run_builder_v01",
+                "ir_path": os.path.abspath(ir_path),
+                "ir_sha256": ir_sha256(ir),
+                "build": {
+                    "primitives": len(plan.primitives),
+                    "anchors": len(plan.anchors),
+                },
+                "metrics": metrics,
+                "validation": validation,
+            }
+            debug_log_path = save_run_log(
+                debug_payload,
+                out_dir=os.path.join(REPO_ROOT, "out", "logs", "runs"),
+                run_id=debug_run_id,
+            )
+            print(f"DEBUG_JSON_LOG:{debug_log_path}")
+        except Exception as exc:
+            print(f"DEBUG_JSON_ERROR:{exc}")
 
     # optionally save .blend
     if blend_path:
