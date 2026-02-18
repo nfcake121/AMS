@@ -111,16 +111,56 @@ def _add_name(target: set[str], value: Any) -> None:
         target.add(name)
 
 
-def _names_from_pairs_top(details: dict[str, Any]) -> set[str]:
+def _names_from_pairs_field(details: dict[str, Any], field_name: str) -> set[str]:
     names: set[str] = set()
-    pairs_top = details.get("pairs_top", [])
-    if not isinstance(pairs_top, list):
+    pairs = details.get(field_name, [])
+    if not isinstance(pairs, list):
         return names
-    for pair in pairs_top:
+    for pair in pairs:
         if not isinstance(pair, dict):
             continue
         _add_name(names, pair.get("left", ""))
         _add_name(names, pair.get("right", ""))
+    return names
+
+
+def _names_from_pairs_top(details: dict[str, Any]) -> set[str]:
+    return _names_from_pairs_field(details, "pairs_top")
+
+
+def _names_from_joint_pairs_top(details: dict[str, Any]) -> set[str]:
+    return _names_from_pairs_field(details, "joint_pairs_top")
+
+
+def _names_from_offenders(details: dict[str, Any]) -> set[str]:
+    names: set[str] = set()
+    offenders = details.get("offenders")
+    if isinstance(offenders, dict):
+        _add_name(names, offenders.get("name", ""))
+        _add_name(names, offenders.get("left", ""))
+        _add_name(names, offenders.get("right", ""))
+        return names
+    if not isinstance(offenders, list):
+        return names
+    for item in offenders:
+        if isinstance(item, dict):
+            _add_name(names, item.get("name", ""))
+            _add_name(names, item.get("left", ""))
+            _add_name(names, item.get("right", ""))
+        else:
+            _add_name(names, item)
+    return names
+
+
+def _names_from_top_offender_pair(metrics: dict[str, Any] | None) -> set[str]:
+    names: set[str] = set()
+    if not isinstance(metrics, dict):
+        return names
+    pair = metrics.get("top_offender_pair")
+    if not isinstance(pair, dict):
+        return names
+    _add_name(names, pair.get("left", ""))
+    _add_name(names, pair.get("right", ""))
     return names
 
 
@@ -190,15 +230,20 @@ def _names_from_no_effect_details(details: dict[str, Any]) -> set[str]:
     return names
 
 
-def _collect_offenders_by_priority(validation: dict[str, Any]) -> tuple[set[str], set[str], set[str], set[str]]:
+def _collect_offenders_by_priority(
+    validation: dict[str, Any],
+    metrics: dict[str, Any] | None = None,
+) -> tuple[set[str], set[str], set[str], set[str], set[str], set[str]]:
     red: set[str] = set()
     blue: set[str] = set()
     orange: set[str] = set()
     offender_codes: set[str] = set()
+    hard_overlap_offenders: set[str] = set()
+    joint_overlap_offenders: set[str] = set()
 
     problems = validation.get("problems", [])
     if not isinstance(problems, list):
-        return red, blue, orange, offender_codes
+        return red, blue, orange, offender_codes, hard_overlap_offenders, joint_overlap_offenders
 
     for problem in problems:
         if not isinstance(problem, dict):
@@ -208,22 +253,41 @@ def _collect_offenders_by_priority(validation: dict[str, Any]) -> tuple[set[str]
 
         names: set[str] = set()
         if code.startswith("OVERLAP_"):
-            names = _names_from_pairs_top(details)
+            hard_names = _names_from_pairs_top(details)
+            offender_names = _names_from_offenders(details)
+            joint_names = _names_from_joint_pairs_top(details)
+            if hard_names:
+                names = hard_names
+                hard_overlap_offenders.update(hard_names)
+            elif offender_names:
+                names = offender_names
+                if joint_names and not hard_names:
+                    joint_overlap_offenders.update(offender_names)
+                else:
+                    hard_overlap_offenders.update(offender_names)
+            elif joint_names:
+                names = joint_names
+                joint_overlap_offenders.update(joint_names)
+            else:
+                fallback_names = _names_from_top_offender_pair(metrics)
+                if fallback_names:
+                    names = fallback_names
+                    hard_overlap_offenders.update(fallback_names)
             red.update(names)
         elif code in {"SLATS_NOT_BENT", "BACK_SLATS_NOT_BENT"}:
             names = _names_from_top5(details)
             blue.update(names)
-        elif code in {"MOD_EXPECTATION_MISSING", "MOD_EXPECTATION_NO_EFFECT"}:
-            if code == "MOD_EXPECTATION_MISSING":
-                names = _names_from_missing_details(details)
-            else:
-                names = _names_from_no_effect_details(details)
+        elif code == "MOD_EXPECTATION_MISSING":
+            names = _names_from_missing_details(details)
+            blue.update(names)
+        elif code == "MOD_EXPECTATION_NO_EFFECT":
+            names = _names_from_no_effect_details(details)
             orange.update(names)
 
         if names:
             offender_codes.add(code)
 
-    return red, blue, orange, offender_codes
+    return red, blue, orange, offender_codes, hard_overlap_offenders, joint_overlap_offenders
 
 
 def _look_at_rotation(camera_obj: Any, target_xyz: tuple[float, float, float]) -> None:
@@ -311,7 +375,14 @@ def apply_debug_visualization(
             "error": "bpy unavailable",
         }
 
-    red_offenders, blue_offenders, orange_offenders, offender_codes = _collect_offenders_by_priority(validation)
+    (
+        red_offenders,
+        blue_offenders,
+        orange_offenders,
+        offender_codes,
+        hard_overlap_offenders,
+        joint_overlap_offenders,
+    ) = _collect_offenders_by_priority(validation, metrics=metrics)
     all_offenders = set(red_offenders) | set(blue_offenders) | set(orange_offenders)
 
     offender_mat = _material("MAT_DEBUG_OFFENDER", (0.92, 0.16, 0.16, 1.0))
@@ -383,6 +454,8 @@ def apply_debug_visualization(
         "overlap_offender_count": len(red_offenders),
         "bent_offender_count": len(blue_offenders),
         "mod_offender_count": len(orange_offenders),
+        "hard_offender_count": len(hard_overlap_offenders),
+        "joint_offender_count": len(joint_overlap_offenders),
         "offender_codes": sorted(offender_codes),
         "painted_red": painted_red,
         "painted_blue": painted_blue,
