@@ -308,13 +308,23 @@ def _pairs_top_from_list(pairs: list[dict[str, Any]], limit: int = 10) -> list[d
     sorted_pairs = sorted(typed_pairs, key=_pair_volume, reverse=True)[: max(0, int(limit))]
     result: list[dict[str, Any]] = []
     for pair in sorted_pairs:
+        pair_payload: dict[str, Any] = {
+            "left": str(pair.get("left", "")),
+            "right": str(pair.get("right", "")),
+            "volume": float(_as_float(pair.get("volume", 0.0), 0.0)),
+            "bbox_world": pair.get("bbox_world"),
+        }
+        mtv_bbox = pair.get("mtv_bbox")
+        if isinstance(mtv_bbox, dict):
+            pair_payload["mtv_bbox"] = mtv_bbox
+        pair_key = str(pair.get("pair_key", "")).strip()
+        if pair_key:
+            pair_payload["pair_key"] = pair_key
+        if "pair_index" in pair:
+            pair_payload["pair_index"] = _as_int(pair.get("pair_index", -1), -1)
+
         result.append(
-            {
-                "left": str(pair.get("left", "")),
-                "right": str(pair.get("right", "")),
-                "volume": float(_as_float(pair.get("volume", 0.0), 0.0)),
-                "bbox_world": pair.get("bbox_world"),
-            }
+            pair_payload
         )
     return result
 
@@ -364,6 +374,9 @@ def _overlap_problem_details_from_pairs(
     hard_pairs_top = _pairs_top_from_list(hard_pairs, limit=10)
     joint_pairs_top = _pairs_top_from_list(joint_pairs, limit=10)
     offender_pairs_top = hard_pairs_top if hard_pairs_top else joint_pairs_top
+    top_pair = offender_pairs_top[0] if offender_pairs_top else {}
+    top_pair_key = str(top_pair.get("pair_key", "")).strip() if isinstance(top_pair, dict) else ""
+    top_pair_index = _as_int(top_pair.get("pair_index", -1), -1) if isinstance(top_pair, dict) else -1
 
     hard_left = {str(pair.get("left", "")) for pair in hard_pairs if str(pair.get("left", "")).strip()}
     hard_right = {str(pair.get("right", "")) for pair in hard_pairs if str(pair.get("right", "")).strip()}
@@ -380,6 +393,8 @@ def _overlap_problem_details_from_pairs(
         "unique_right_count": int(len(hard_right)),
         "joint_pairs_count": int(len(joint_pairs)),
         "joint_allowance_mm": float(JOINT_OVERLAP_ALLOWANCE_MM),
+        "top_pair_key": top_pair_key,
+        "top_pair_index": int(top_pair_index),
     }
 
 
