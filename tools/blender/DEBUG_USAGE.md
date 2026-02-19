@@ -70,9 +70,3 @@ $env:DEBUG_SNAPSHOT_BLEND_DIR="out/snapshots/batch_blend"
 
 Get-Item out/logs/batch/summary.csv
 ```
-
-## Repo Dump (PowerShell)
-
-```powershell
-powershell -ExecutionPolicy Bypass -File tools/dump_debug.ps1 -MaxFileSizeKB 200
-```

@@ -55,3 +55,40 @@ def load_run_log(path: str | os.PathLike[str]) -> dict[str, Any]:
     """Load a previously saved debug run log."""
     return load_json(path)
 
+def ensure_dir(path: str | os.PathLike[str]) -> str:
+    """Create directory if it doesn't exist. Returns normalized string path."""
+    p = Path(path)
+    p.mkdir(parents=True, exist_ok=True)
+    return str(p)
+def ensure_parent(path: str | os.PathLike[str]) -> str:
+    """Ensure parent directory for a file path exists. Returns normalized string path."""
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    return str(p)
+def ensure_dir(path: str | os.PathLike[str]) -> str:
+    """Create directory if it doesn't exist. Returns normalized string path."""
+    p = Path(path)
+    p.mkdir(parents=True, exist_ok=True)
+    return str(p)
+
+
+def make_run_tag(*, run_id: str) -> str:
+    """Return a stable tag for artifacts based on run_id."""
+    # debug_run ожидает, что run_tag используется в именах файлов: <run_tag>.json / .metrics.json / .ir_in.json ...
+    return str(run_id)
+
+
+def sha256_file(path: str | os.PathLike[str]) -> str:
+    """Compute SHA256 hex digest of a file."""
+    p = Path(path)
+    h = hashlib.sha256()
+    with p.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def sha256_json(payload: Mapping[str, Any]) -> str:
+    """Compute SHA256 of canonical JSON (stable across key order)."""
+    s = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(s.encode("utf-8")).hexdigest()

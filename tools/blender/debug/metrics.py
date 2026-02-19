@@ -50,86 +50,6 @@ def _bbox_spans(bbox: dict[str, list[float]] | None) -> dict[str, float]:
     }
 
 
-def _bbox_center(bbox: dict[str, list[float]] | None) -> tuple[float, float, float] | None:
-    if not bbox:
-        return None
-    min_corner = bbox.get("min")
-    max_corner = bbox.get("max")
-    if not isinstance(min_corner, list) or not isinstance(max_corner, list):
-        return None
-    if len(min_corner) < 3 or len(max_corner) < 3:
-        return None
-    try:
-        min_x = float(min_corner[0])
-        min_y = float(min_corner[1])
-        min_z = float(min_corner[2])
-        max_x = float(max_corner[0])
-        max_y = float(max_corner[1])
-        max_z = float(max_corner[2])
-    except (TypeError, ValueError):
-        return None
-    return (
-        float((min_x + max_x) * 0.5),
-        float((min_y + max_y) * 0.5),
-        float((min_z + max_z) * 0.5),
-    )
-
-
-def _bbox_overlap_depths(
-    a: dict[str, list[float]] | None,
-    b: dict[str, list[float]] | None,
-) -> tuple[float, float, float]:
-    if not a or not b:
-        return 0.0, 0.0, 0.0
-    a_min = a.get("min")
-    a_max = a.get("max")
-    b_min = b.get("min")
-    b_max = b.get("max")
-    if not isinstance(a_min, list) or not isinstance(a_max, list):
-        return 0.0, 0.0, 0.0
-    if not isinstance(b_min, list) or not isinstance(b_max, list):
-        return 0.0, 0.0, 0.0
-    if len(a_min) < 3 or len(a_max) < 3 or len(b_min) < 3 or len(b_max) < 3:
-        return 0.0, 0.0, 0.0
-    dx = min(float(a_max[0]), float(b_max[0])) - max(float(a_min[0]), float(b_min[0]))
-    dy = min(float(a_max[1]), float(b_max[1])) - max(float(a_min[1]), float(b_min[1]))
-    dz = min(float(a_max[2]), float(b_max[2])) - max(float(a_min[2]), float(b_min[2]))
-    return float(dx), float(dy), float(dz)
-
-
-def _bbox_mtv(
-    left_bbox: dict[str, list[float]] | None,
-    right_bbox: dict[str, list[float]] | None,
-) -> dict[str, Any] | None:
-    dx, dy, dz = _bbox_overlap_depths(left_bbox, right_bbox)
-    if dx <= 0.0 or dy <= 0.0 or dz <= 0.0:
-        return None
-
-    overlaps = {"x": float(dx), "y": float(dy), "z": float(dz)}
-    axis, depth_m = min(
-        ((key, value) for key, value in overlaps.items() if value > 0.0),
-        key=lambda item: float(item[1]),
-    )
-    axis_index = {"x": 0, "y": 1, "z": 2}[axis]
-
-    left_center = _bbox_center(left_bbox)
-    right_center = _bbox_center(right_bbox)
-    if left_center is None or right_center is None:
-        sign = 1
-    else:
-        sign = -1 if float(left_center[axis_index]) < float(right_center[axis_index]) else 1
-
-    delta_m = [0.0, 0.0, 0.0]
-    delta_m[axis_index] = float(sign) * float(depth_m)
-
-    return {
-        "axis": str(axis),
-        "depth_m": float(depth_m),
-        "sign": int(sign),
-        "delta_m": [float(delta_m[0]), float(delta_m[1]), float(delta_m[2])],
-    }
-
-
 def _bbox_overlap(a: dict[str, list[float]] | None, b: dict[str, list[float]] | None) -> tuple[float, dict[str, list[float]] | None]:
     if not a or not b:
         return 0.0, None
@@ -287,7 +207,6 @@ def _collect_overlap_pairs(
 ) -> dict[str, Any]:
     pairs: list[dict[str, Any]] = []
     total = 0.0
-    pair_index = 0
     for left_name in left_names:
         left_bbox = object_index.get(left_name, {}).get("bbox_world")
         if not left_bbox:
@@ -300,19 +219,14 @@ def _collect_overlap_pairs(
             if volume <= 0.0:
                 continue
             total += volume
-            mtv_bbox = _bbox_mtv(left_bbox, right_bbox)
             pairs.append(
                 {
-                    "pair_index": int(pair_index),
-                    "pair_key": f"{left_name}|{right_name}",
                     "left": left_name,
                     "right": right_name,
                     "volume": float(volume),
                     "bbox_world": bbox,
-                    "mtv_bbox": mtv_bbox,
                 }
             )
-            pair_index += 1
     return {"total_volume": float(total), "pairs": pairs}
 
 
@@ -351,7 +265,6 @@ def collect_scene_metrics() -> dict[str, Any]:
     }
 
     return {
-        "version": "debug-metrics-v2",
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "units": {"length": "m", "volume": "m3"},
         "object_count": len(objects),
