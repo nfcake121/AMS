@@ -48,60 +48,6 @@ def bbox_spans_m(bbox_world: Any) -> tuple[float, float, float]:
     return float(sx), float(sy), float(sz)
 
 
-def _bbox_center_xyz(bbox_world: Any) -> tuple[float, float, float] | None:
-    if not isinstance(bbox_world, dict):
-        return None
-    min_corner = bbox_world.get("min", [])
-    max_corner = bbox_world.get("max", [])
-    if not isinstance(min_corner, list) or not isinstance(max_corner, list):
-        return None
-    if len(min_corner) < 3 or len(max_corner) < 3:
-        return None
-    min_x = _as_float(min_corner[0], 0.0)
-    min_y = _as_float(min_corner[1], 0.0)
-    min_z = _as_float(min_corner[2], 0.0)
-    max_x = _as_float(max_corner[0], 0.0)
-    max_y = _as_float(max_corner[1], 0.0)
-    max_z = _as_float(max_corner[2], 0.0)
-    return (
-        float((min_x + max_x) * 0.5),
-        float((min_y + max_y) * 0.5),
-        float((min_z + max_z) * 0.5),
-    )
-
-
-def bbox_center_from_pair(pair: dict[str, Any] | None) -> tuple[float, float, float] | None:
-    if not isinstance(pair, dict):
-        return None
-    return _bbox_center_xyz(pair.get("bbox_world"))
-
-
-def overlap_depths_from_pair(pair: dict[str, Any] | None) -> tuple[float, float, float]:
-    if not isinstance(pair, dict):
-        return 0.0, 0.0, 0.0
-    return bbox_spans_m(pair.get("bbox_world"))
-
-
-def choose_axis_from_spans(spans: tuple[float, float, float]) -> str:
-    sx, sy, sz = (float(spans[0]), float(spans[1]), float(spans[2]))
-    positive = [(axis, span) for axis, span in (("x", sx), ("y", sy), ("z", sz)) if span > 0.0]
-    if positive:
-        axis, _ = min(positive, key=lambda item: float(item[1]))
-        return str(axis)
-    axis, _ = min((("x", sx), ("y", sy), ("z", sz)), key=lambda item: float(item[1]))
-    return str(axis)
-
-
-def push_sign(left_obj_bbox: Any, right_obj_bbox: Any, axis: str) -> int:
-    axis_index = {"x": 0, "y": 1, "z": 2}.get(str(axis).lower(), 1)
-    left_center = _bbox_center_xyz(left_obj_bbox)
-    right_center = _bbox_center_xyz(right_obj_bbox)
-    if (left_center is None) or (right_center is None):
-        return 1
-    diff = float(left_center[axis_index] - right_center[axis_index])
-    return 1 if diff > 0.0 else -1
-
-
 def bbox_min_span_axis(bbox_world: Any) -> tuple[str, float]:
     sx, sy, sz = bbox_spans_m(bbox_world)
     axis, span = min(
@@ -109,6 +55,106 @@ def bbox_min_span_axis(bbox_world: Any) -> tuple[str, float]:
         key=lambda item: float(item[1]),
     )
     return str(axis), float(span)
+
+
+def _axis_index(axis: str) -> int:
+    axis_map = {"x": 0, "y": 1, "z": 2}
+    return int(axis_map.get(str(axis).strip().lower(), 0))
+
+
+def _bbox_center_axis(bbox_world: Any, axis: str) -> float:
+    if not isinstance(bbox_world, dict):
+        return 0.0
+    min_corner = bbox_world.get("min", [])
+    max_corner = bbox_world.get("max", [])
+    if not isinstance(min_corner, list) or not isinstance(max_corner, list):
+        return 0.0
+    index = _axis_index(axis)
+    if len(min_corner) <= index or len(max_corner) <= index:
+        return 0.0
+    min_value = _as_float(min_corner[index], 0.0)
+    max_value = _as_float(max_corner[index], 0.0)
+    return float((min_value + max_value) * 0.5)
+
+
+def _bbox_axis_bounds(bbox_world: Any, axis: str) -> tuple[float, float] | None:
+    if not isinstance(bbox_world, dict):
+        return None
+    min_corner = bbox_world.get("min", [])
+    max_corner = bbox_world.get("max", [])
+    if not isinstance(min_corner, list) or not isinstance(max_corner, list):
+        return None
+    index = _axis_index(axis)
+    if len(min_corner) <= index or len(max_corner) <= index:
+        return None
+    min_value = _as_float(min_corner[index], 0.0)
+    max_value = _as_float(max_corner[index], 0.0)
+    if min_value <= max_value:
+        return float(min_value), float(max_value)
+    return float(max_value), float(min_value)
+
+
+def _signed_delta_mm(delta_mm: int, direction: int) -> int:
+    magnitude = max(1, abs(int(delta_mm)))
+    sign = 1 if int(direction) >= 0 else -1
+    return int(sign * magnitude)
+
+
+def _metrics_object_bbox(metrics: dict[str, Any] | None, name: str) -> dict[str, Any] | None:
+    if not isinstance(metrics, dict):
+        return None
+    objects = metrics.get("objects", [])
+    if not isinstance(objects, list):
+        return None
+    needle = str(name).strip().lower()
+    if not needle:
+        return None
+    for obj in objects:
+        if not isinstance(obj, dict):
+            continue
+        if str(obj.get("name", "")).strip().lower() != needle:
+            continue
+        bbox_world = obj.get("bbox_world")
+        if isinstance(bbox_world, dict):
+            return bbox_world
+        return None
+    return None
+
+
+def _rail_direction_hint(name: str) -> int | None:
+    lowered = str(name).strip().lower()
+    if not lowered:
+        return None
+    if ("back_rail_left" in lowered) or ("rail_left" in lowered):
+        return 1
+    if ("back_rail_right" in lowered) or ("rail_right" in lowered):
+        return -1
+    return None
+
+
+def _resolve_direction(pair: dict[str, Any] | None, axis: str, metrics: dict[str, Any] | None) -> int:
+    axis_name = str(axis).strip().lower()
+    left_name = str((pair or {}).get("left", ""))
+    right_name = str((pair or {}).get("right", ""))
+    left_bbox = _metrics_object_bbox(metrics, left_name)
+    right_bbox = _metrics_object_bbox(metrics, right_name)
+    if left_bbox and right_bbox:
+        left_center = _bbox_center_axis(left_bbox, axis_name)
+        right_center = _bbox_center_axis(right_bbox, axis_name)
+        return 1 if left_center > right_center else -1
+
+    if axis_name == "x":
+        rail_hint = _rail_direction_hint(right_name)
+        if rail_hint is not None:
+            return int(rail_hint)
+
+    overlap_center = _bbox_center_axis((pair or {}).get("bbox_world"), axis_name)
+    if axis_name == "x":
+        if overlap_center < 0.0:
+            return 1
+        if overlap_center > 0.0:
+            return -1
+    return 1 if overlap_center < 0.0 else -1
 
 
 def mm_from_m(m: float) -> int:
@@ -207,27 +253,6 @@ def _inc_path_clamped(
     return changed, new_value, old_value
 
 
-def _inc_path_signed_clamped(
-    ir: dict[str, Any],
-    path: str,
-    delta: float,
-    sign: int,
-    min_value: float,
-    max_value: float,
-    patches: list[dict[str, Any]],
-) -> tuple[bool, int | float, Any]:
-    normalized_sign = 1 if int(sign) >= 0 else -1
-    signed_delta = float(delta) * float(normalized_sign)
-    return _inc_path_clamped(
-        ir,
-        path,
-        signed_delta,
-        min_value,
-        max_value,
-        patches,
-    )
-
-
 def _log_pair_context(
     *,
     verbose: bool,
@@ -298,38 +323,6 @@ def _problem_pairs_top(problem: dict[str, Any]) -> list[dict[str, Any]]:
     return [pair for pair in pairs if isinstance(pair, dict)]
 
 
-def _pair_key(pair: dict[str, Any]) -> str:
-    pair_key = str(pair.get("pair_key", "")).strip()
-    if pair_key:
-        return pair_key
-    left = str(pair.get("left", "")).strip()
-    right = str(pair.get("right", "")).strip()
-    if left or right:
-        return f"{left}|{right}"
-    return ""
-
-
-def _pair_mtv_bbox(pair: dict[str, Any] | None) -> dict[str, Any] | None:
-    if not isinstance(pair, dict):
-        return None
-    mtv_bbox = pair.get("mtv_bbox")
-    if not isinstance(mtv_bbox, dict):
-        return None
-    axis = str(mtv_bbox.get("axis", "")).strip().lower()
-    depth_m = _as_float(mtv_bbox.get("depth_m", 0.0), 0.0)
-    sign_raw = _as_int(mtv_bbox.get("sign", 1), 1)
-    sign = 1 if sign_raw >= 0 else -1
-    if axis not in {"x", "y", "z"}:
-        return None
-    if depth_m <= 0.0:
-        return None
-    payload = dict(mtv_bbox)
-    payload["axis"] = axis
-    payload["depth_m"] = float(depth_m)
-    payload["sign"] = int(sign)
-    return payload
-
-
 def get_top_pair(problem: dict[str, Any]) -> dict[str, Any] | None:
     pairs = _problem_pairs_top(problem)
     if not pairs:
@@ -337,41 +330,9 @@ def get_top_pair(problem: dict[str, Any]) -> dict[str, Any] | None:
     return pairs[0]
 
 
-def _pair_from_metrics(
-    metrics: dict[str, Any] | None,
-    overlap_key: str,
-    reference_pair: dict[str, Any] | None,
-) -> dict[str, Any] | None:
-    if not isinstance(reference_pair, dict):
-        return None
-    pairs = _overlap_pairs(metrics, overlap_key)
-    if not pairs:
-        return None
-
-    reference_key = _pair_key(reference_pair)
-    reference_left = str(reference_pair.get("left", "")).strip()
-    reference_right = str(reference_pair.get("right", "")).strip()
-
-    if reference_key:
-        for pair in pairs:
-            if _pair_key(pair) == reference_key:
-                return pair
-
-    for pair in pairs:
-        if (
-            str(pair.get("left", "")).strip() == reference_left
-            and str(pair.get("right", "")).strip() == reference_right
-        ):
-            return pair
-    return None
-
-
 def _top_pair(problem: dict[str, Any], metrics: dict[str, Any] | None, overlap_key: str) -> dict[str, Any] | None:
     from_problem = get_top_pair(problem)
     if from_problem is not None:
-        matched = _pair_from_metrics(metrics, overlap_key, from_problem)
-        if matched is not None:
-            return matched
         return from_problem
 
     pairs = _overlap_pairs(metrics, overlap_key)
@@ -392,50 +353,6 @@ def _delta_from_pair(pair: dict[str, Any] | None, safety_mm: int) -> tuple[str, 
         return axis, 0.0, 2
     delta_mm = mm_from_m(span_m) + int(max(0, safety_mm))
     return axis, float(span_m), int(max(1, delta_mm))
-
-
-def _object_bbox_from_metrics(metrics: dict[str, Any] | None, name: str) -> dict[str, Any] | None:
-    if not isinstance(metrics, dict):
-        return None
-    target = str(name).strip().lower()
-    if not target:
-        return None
-    objects = metrics.get("objects", [])
-    if not isinstance(objects, list):
-        return None
-    for item in objects:
-        if not isinstance(item, dict):
-            continue
-        obj_name = str(item.get("name", item.get("object_name", ""))).strip().lower()
-        if obj_name != target:
-            continue
-        bbox_world = item.get("bbox_world")
-        if isinstance(bbox_world, dict):
-            return bbox_world
-    return None
-
-
-def _is_back_pair_left_candidate(name: str) -> bool:
-    lower = str(name).strip().lower()
-    return ("back_slat" in lower) or ("back_support" in lower)
-
-
-def normalize_pair_for_back(pair: dict[str, Any] | None, sign: int) -> tuple[dict[str, Any] | None, int, bool]:
-    if not isinstance(pair, dict):
-        return None, int(1 if int(sign) >= 0 else -1), False
-
-    normalized = dict(pair)
-    normalized_sign = int(1 if int(sign) >= 0 else -1)
-    left_name = str(normalized.get("left", "")).strip()
-    right_name = str(normalized.get("right", "")).strip()
-
-    if _is_back_pair_left_candidate(left_name):
-        return normalized, normalized_sign, False
-
-    normalized["left"] = right_name
-    normalized["right"] = left_name
-    normalized_sign *= -1
-    return normalized, normalized_sign, True
 
 
 def _overlap_total_m3(metrics: dict[str, Any] | None, key: str) -> float | None:
@@ -726,43 +643,61 @@ def _fix_overlap_back_slats_frame(
     del context
     code = "OVERLAP_BACK_SLATS_FRAME"
     overlap_key = "back_slats_vs_frame"
-    pair_raw = _top_pair(problem, metrics, "back_slats_vs_frame")
-    pair = pair_raw
-    safety_mm = _safety_mm()
-    mtv_bbox = _pair_mtv_bbox(pair_raw)
-    use_mtv = mtv_bbox is not None
-
-    axis = "y"
-    span_m = 0.0
-    depth_m = 0.0
-    sign = 1
-    swapped = False
-    if mtv_bbox is not None:
-        axis = str(mtv_bbox.get("axis", "y")).strip().lower()
-        depth_m = float(_as_float(mtv_bbox.get("depth_m", 0.0), 0.0))
-        span_m = float(depth_m)
-        sign = 1 if _as_int(mtv_bbox.get("sign", 1), 1) >= 0 else -1
-        delta_mm = int(max(1, mm_from_m(depth_m) + int(max(0, safety_mm))))
-        pair, sign, swapped = normalize_pair_for_back(pair_raw, sign)
-        if pair is None:
-            pair = pair_raw
-        if not isinstance(pair, dict):
-            pair = {}
-    else:
-        axis, span_m, delta_mm = _delta_from_pair(pair_raw, safety_mm=safety_mm)
-        depth_m = float(span_m)
-
+    pair = _top_pair(problem, metrics, "back_slats_vs_frame")
+    right_name = str((pair or {}).get("right", ""))
+    right_name_lower = right_name.lower()
     left_name = str((pair or {}).get("left", ""))
-    right_name = str((pair or {}).get("right", "")).lower()
-
+    safety_mm = _safety_mm()
+    axis, span_m, delta_mm = _delta_from_pair(pair, safety_mm=safety_mm)
     effect_eps_m3 = read_env_float("DEBUG_AUTOFIX_EFFECT_EPS_M3", 1e-8)
+    left_bbox_world = _metrics_object_bbox(metrics, left_name)
+    right_bbox_world = _metrics_object_bbox(metrics, right_name)
+    left_center_axis = _bbox_center_axis(left_bbox_world, axis) if left_bbox_world else None
+    right_center_axis = _bbox_center_axis(right_bbox_world, axis) if right_bbox_world else None
+    overlap_center_axis = _bbox_center_axis((pair or {}).get("bbox_world"), axis)
+    slat_bounds = _bbox_axis_bounds(left_bbox_world, axis)
+    rail_bounds = _bbox_axis_bounds(right_bbox_world, axis)
+    slat_min_axis: float | None = None
+    slat_max_axis: float | None = None
+    rail_min_axis: float | None = None
+    rail_max_axis: float | None = None
+    if slat_bounds is not None:
+        slat_min_axis, slat_max_axis = slat_bounds
+    if rail_bounds is not None:
+        rail_min_axis, rail_max_axis = rail_bounds
+
+    push_plus_mm: int | None = None
+    push_minus_mm: int | None = None
+    rail_side_direction = _rail_direction_hint(right_name_lower)
+    if axis in {"y", "z"} and (slat_bounds is not None) and (rail_bounds is not None):
+        safety = int(max(0, safety_mm))
+        push_plus_mm = int(math.ceil((float(rail_max_axis) - float(slat_min_axis)) * 1000.0)) + safety
+        push_minus_mm = int(math.ceil((float(slat_max_axis) - float(rail_min_axis)) * 1000.0)) + safety
+        chosen_signed_delta_mm = int(push_plus_mm if push_plus_mm <= push_minus_mm else -push_minus_mm)
+        direction = 1 if chosen_signed_delta_mm >= 0 else -1
+    else:
+        direction = _resolve_direction(pair, axis, metrics)
+        if axis == "x" and rail_side_direction is not None:
+            direction = int(rail_side_direction)
+        chosen_signed_delta_mm = _signed_delta_mm(delta_mm, direction)
+
+    primary_direction = int(direction)
+    axis_delta_mm = max(1, abs(int(chosen_signed_delta_mm)))
+    left_center_text = "n/a" if left_center_axis is None else f"{float(left_center_axis):.6g}"
+    right_center_text = "n/a" if right_center_axis is None else f"{float(right_center_axis):.6g}"
+    slat_min_text = "n/a" if slat_min_axis is None else f"{float(slat_min_axis):.6g}"
+    slat_max_text = "n/a" if slat_max_axis is None else f"{float(slat_max_axis):.6g}"
+    rail_min_text = "n/a" if rail_min_axis is None else f"{float(rail_min_axis):.6g}"
+    rail_max_text = "n/a" if rail_max_axis is None else f"{float(rail_max_axis):.6g}"
+    push_plus_text = "n/a" if push_plus_mm is None else str(int(push_plus_mm))
+    push_minus_text = "n/a" if push_minus_mm is None else str(int(push_minus_mm))
     _log_pair_context(
         verbose=verbose,
         code=code,
         pair=pair,
         axis=axis,
         span_m=span_m,
-        delta_mm=delta_mm,
+        delta_mm=axis_delta_mm,
         safety_mm=safety_mm,
     )
     if verbose:
@@ -770,9 +705,13 @@ def _fix_overlap_back_slats_frame(
             True,
             (
                 f"[autofix] code={code} pair={left_name}->{right_name} "
-                f"axis={axis} depth_m={depth_m:.6g} sign={int(sign)} "
-                f"delta_mm={int(delta_mm)} safety_mm={int(safety_mm)} "
-                f"mtv={bool(use_mtv)} swapped={bool(swapped)}"
+                f"axis={axis} dir={int(primary_direction):+d} span_m={span_m:.6g} delta_mm={axis_delta_mm} "
+                f"slat_min={slat_min_text} slat_max={slat_max_text} "
+                f"rail_min={rail_min_text} rail_max={rail_max_text} "
+                f"push_plus_mm={push_plus_text} push_minus_mm={push_minus_text} "
+                f"chosen_signed_delta_mm={int(chosen_signed_delta_mm)} "
+                f"left_center={left_center_text} right_center={right_center_text} "
+                f"overlap_center={overlap_center_axis:.6g}"
             ),
         )
     effective, _, _, _ = _log_effect_decision(
@@ -784,222 +723,174 @@ def _fix_overlap_back_slats_frame(
         eps_m3=effect_eps_m3,
     )
 
-    Strategy = tuple[str, str, float, int, float, float, bool]
+    Strategy = tuple[str, str, int, float, float, bool, int | None, int | None]
 
-    def _apply_strategy(strategy: Strategy, step: str) -> bool:
-        strategy_name, path, delta, strategy_sign, min_value, max_value, require_existing = strategy
+    def _apply_strategy(strategy: Strategy | None, step: str) -> bool:
+        if strategy is None:
+            return False
+        (
+            strategy_name,
+            path,
+            delta_mm_value,
+            min_value,
+            max_value,
+            require_existing,
+            forced_direction,
+            forced_signed_delta_mm,
+        ) = strategy
+        direction_used = int(primary_direction if forced_direction is None else forced_direction)
+        signed_delta = (
+            int(forced_signed_delta_mm)
+            if forced_signed_delta_mm is not None
+            else _signed_delta_mm(delta_mm_value, direction_used)
+        )
+        if forced_signed_delta_mm is not None:
+            direction_used = 1 if int(signed_delta) >= 0 else -1
         if require_existing:
             exists, _ = _get_path(ir, path)
             if not exists:
                 if verbose:
                     _vprint(
                         True,
-                        f"[autofix] code={code} skip_strategy={strategy_name} reason=missing_path path={path}",
+                        (
+                            f"[autofix] code={code} pair={left_name}->{right_name} "
+                            f"axis={axis} dir={int(direction_used):+d} span_m={span_m:.6g} delta_mm={delta_mm_value} "
+                            f"slat_min={slat_min_text} slat_max={slat_max_text} "
+                            f"rail_min={rail_min_text} rail_max={rail_max_text} "
+                            f"push_plus_mm={push_plus_text} push_minus_mm={push_minus_text} "
+                            f"chosen_signed_delta_mm={int(signed_delta)} "
+                            f"chosen_strategy={strategy_name} param={path} reason=missing_path step={step}"
+                        ),
                     )
                 return False
-        changed, new_value, old_value = _inc_path_signed_clamped(
+        changed, new_value, old_value = _inc_path_clamped(
             ir,
             path,
-            float(delta),
-            int(strategy_sign),
+            float(signed_delta),
             float(min_value),
             float(max_value),
             patches,
         )
-        if changed:
-            _log_patch_change(
-                verbose=verbose,
-                code=code,
-                path=path,
-                old_value=old_value,
-                new_value=new_value,
-            )
         if verbose:
+            left_center_text = "n/a" if left_center_axis is None else f"{float(left_center_axis):.6g}"
+            right_center_text = "n/a" if right_center_axis is None else f"{float(right_center_axis):.6g}"
             _vprint(
                 True,
                 (
-                    f"[autofix] code={code} chosen_strategy={strategy_name} "
-                    f"chosen_param={path} step={step} pair={left_name}->{right_name}"
+                    f"[autofix] code={code} pair={left_name}->{right_name} "
+                    f"axis={axis} dir={int(direction_used):+d} span_m={span_m:.6g} delta_mm={delta_mm_value} "
+                    f"slat_min={slat_min_text} slat_max={slat_max_text} "
+                    f"rail_min={rail_min_text} rail_max={rail_max_text} "
+                    f"push_plus_mm={push_plus_text} push_minus_mm={push_minus_text} "
+                    f"chosen_signed_delta_mm={int(signed_delta)} chosen_strategy={strategy_name} param={path} "
+                    f"old->new={old_value}->{new_value} changed={changed} step={step} "
+                    f"left_center={left_center_text} right_center={right_center_text} "
+                    f"overlap_center={overlap_center_axis:.6g}"
                 ),
             )
         return True
 
-    offset_delta = float(max(1, int(math.ceil(float(delta_mm) / 2.0))))
-    has_offset_y, _ = _get_path(ir, "back_support.offset_y_mm")
+    offset_delta_mm = max(1, int(math.ceil(float(axis_delta_mm) / 2.0)))
+    safe_delta_mm = 2 if int(axis_delta_mm) >= 4 else 1
+    safe_offset_delta_mm = max(1, int(math.ceil(float(safe_delta_mm) / 2.0)))
 
     primary: Strategy
     secondary: Strategy | None = None
-    fallback: Strategy | None = None
+    fallback: Strategy
 
-    if use_mtv:
-        if axis == "y":
-            if has_offset_y:
-                primary = (
-                    "axis_y_offset_y_primary_signed",
-                    "back_support.offset_y_mm",
-                    offset_delta,
-                    int(sign),
-                    -50.0,
-                    80.0,
-                    True,
-                )
-                secondary = (
-                    "axis_y_margin_z_secondary_signed",
-                    "back_support.margin_z_mm",
-                    float(delta_mm),
-                    int(sign),
-                    0.0,
-                    120.0,
-                    False,
-                )
-            else:
-                primary = (
-                    "axis_y_margin_z_primary_signed_no_offset",
-                    "back_support.margin_z_mm",
-                    float(delta_mm),
-                    int(sign),
-                    0.0,
-                    120.0,
-                    False,
-                )
-                secondary = (
-                    "axis_y_margin_x_secondary_signed",
-                    "back_support.margin_x_mm",
-                    float(delta_mm),
-                    int(sign),
-                    0.0,
-                    80.0,
-                    False,
-                )
-            fallback = (
-                "axis_y_margin_x_fallback_signed",
-                "back_support.margin_x_mm",
-                float(delta_mm),
-                int(sign),
-                0.0,
-                80.0,
-                False,
-            )
-        elif axis == "z":
-            primary = (
-                "axis_z_margin_z_primary_signed",
-                "back_support.margin_z_mm",
-                float(delta_mm),
-                int(sign),
-                0.0,
-                80.0,
-                False,
-            )
-            secondary = (
-                "axis_z_offset_y_secondary_signed",
-                "back_support.offset_y_mm",
-                offset_delta,
-                int(sign),
-                -50.0,
-                80.0,
-                True,
-            )
-            fallback = (
-                "axis_z_margin_x_fallback_signed",
-                "back_support.margin_x_mm",
-                float(delta_mm),
-                int(sign),
-                0.0,
-                80.0,
-                False,
-            )
-        else:  # axis == "x"
-            primary = (
-                "axis_x_margin_x_primary_signed",
-                "back_support.margin_x_mm",
-                float(delta_mm),
-                int(sign),
-                0.0,
-                80.0,
-                False,
-            )
-            secondary = (
-                "axis_x_margin_z_secondary_signed",
-                "back_support.margin_z_mm",
-                float(delta_mm),
-                int(sign),
-                0.0,
-                120.0,
-                False,
-            )
-            fallback = None
-    else:
-        if axis == "y":
-            if has_offset_y:
-                primary = (
-                    "axis_y_offset_y_primary",
-                    "back_support.offset_y_mm",
-                    offset_delta,
-                    1,
-                    -50.0,
-                    80.0,
-                    True,
-                )
-            else:
-                primary = (
-                    "axis_y_margin_z_primary_no_offset",
-                    "back_support.margin_z_mm",
-                    float(delta_mm),
-                    1,
-                    0.0,
-                    120.0,
-                    False,
-                )
-            secondary = (
-                "axis_y_margin_x_fallback",
-                "back_support.margin_x_mm",
-                float(delta_mm),
-                1,
-                0.0,
-                80.0,
-                False,
-            )
-            fallback = None
-        elif axis == "z":
-            primary = (
-                "axis_z_margin_z_primary",
-                "back_support.margin_z_mm",
-                float(delta_mm),
-                1,
-                0.0,
-                80.0,
-                False,
-            )
-            secondary = (
-                "axis_z_offset_y_secondary",
-                "back_support.offset_y_mm",
-                offset_delta,
-                1,
-                -50.0,
-                80.0,
-                True,
-            )
-            fallback = None
-        else:  # axis == "x"
-            primary = (
-                "axis_x_margin_x_primary",
-                "back_support.margin_x_mm",
-                float(delta_mm),
-                1,
-                0.0,
-                80.0,
-                False,
-            )
-            secondary = (
-                "axis_x_margin_z_secondary",
-                "back_support.margin_z_mm",
-                float(delta_mm),
-                1,
-                0.0,
-                120.0,
-                False,
-            )
-            fallback = None
+    if axis == "y":
+        primary = (
+            "axis_y_offset_y_primary",
+            "back_support.offset_y_mm",
+            int(axis_delta_mm),
+            -50.0,
+            80.0,
+            False,
+            int(direction),
+            int(chosen_signed_delta_mm),
+        )
+        secondary = (
+            "axis_y_margin_z_secondary",
+            "back_support.margin_z_mm",
+            int(axis_delta_mm),
+            0.0,
+            120.0,
+            False,
+            int(direction),
+            None,
+        )
+        fallback = (
+            "axis_y_offset_y_safe_fallback",
+            "back_support.offset_y_mm",
+            int(safe_offset_delta_mm),
+            -50.0,
+            80.0,
+            False,
+            int(direction),
+            None,
+        )
+    elif axis == "z":
+        primary = (
+            "axis_z_margin_z_primary",
+            "back_support.margin_z_mm",
+            int(axis_delta_mm),
+            0.0,
+            120.0,
+            False,
+            int(direction),
+            int(chosen_signed_delta_mm),
+        )
+        secondary = (
+            "axis_z_offset_y_secondary",
+            "back_support.offset_y_mm",
+            int(offset_delta_mm),
+            -50.0,
+            80.0,
+            False,
+            int(direction),
+            None,
+        )
+        fallback = (
+            "axis_z_margin_z_safe_fallback",
+            "back_support.margin_z_mm",
+            int(safe_delta_mm),
+            0.0,
+            120.0,
+            False,
+            int(direction),
+            None,
+        )
+    else:  # axis == "x"
+        primary = (
+            "axis_x_margin_x_primary",
+            "back_support.margin_x_mm",
+            int(axis_delta_mm),
+            0.0,
+            80.0,
+            False,
+            int(primary_direction),
+            None,
+        )
+        secondary = (
+            "axis_x_margin_z_secondary",
+            "back_support.margin_z_mm",
+            int(axis_delta_mm),
+            0.0,
+            120.0,
+            False,
+            int(primary_direction),
+            None,
+        )
+        fallback = (
+            "axis_x_margin_x_safe_fallback",
+            "back_support.margin_x_mm",
+            int(safe_delta_mm),
+            0.0,
+            80.0,
+            False,
+            int(primary_direction),
+            None,
+        )
 
     _apply_strategy(primary, step="primary")
     if effective:
@@ -1007,17 +898,14 @@ def _fix_overlap_back_slats_frame(
 
     if verbose:
         _vprint(True, f"[autofix] code={code} no_effect_after_primary effective=False")
-    if secondary is None:
-        if verbose:
-            _vprint(True, f"[autofix] code={code} secondary_strategy=none")
-        return
     secondary_applied = _apply_strategy(secondary, step="secondary")
-    if not secondary_applied and verbose:
+    if verbose and (secondary is None):
+        _vprint(True, f"[autofix] code={code} secondary_strategy=none")
+    if not secondary_applied and (secondary is not None) and verbose:
         _vprint(True, f"[autofix] code={code} secondary_strategy_skipped")
-    if fallback is not None:
-        if verbose:
-            _vprint(True, f"[autofix] code={code} no_effect_after_secondary effective=False fallback=true")
-        _apply_strategy(fallback, step="fallback")
+    if verbose:
+        _vprint(True, f"[autofix] code={code} no_effect_after_secondary effective=False fallback=true")
+    _apply_strategy(fallback, step="fallback")
 
 
 def _fix_overlap_slats_arms(ir: dict[str, Any], patches: list[dict[str, Any]]) -> None:
@@ -1200,114 +1088,31 @@ if __name__ == "__main__":
     print(f"SELF_TEST_SLATS_RAIL_AXIS_X primary_patch={primary_path_x} ok={ok_axis_x}")
     print(json.dumps(patches_x, ensure_ascii=False, indent=2))
 
-    problem_back_axis_y = {
-        "code": "OVERLAP_BACK_SLATS_FRAME",
-        "details": {
-            "pairs_top": [
-                {
-                    "pair_key": "back_slat_1|back_rail_left",
-                    "left": "back_slat_1",
-                    "right": "back_rail_left",
-                    "volume": 1.0e-4,
-                    "bbox_world": {
-                        "min": [0.00, -0.12, 0.00],
-                        "max": [0.02, -0.11, 0.04],
-                    },
-                }
-            ]
+    direction_pair_left = {
+        "left": "back_slat_1",
+        "right": "back_rail_left",
+        "bbox_world": {
+            "min": [-0.024, 0.10, 0.42],
+            "max": [-0.018, 0.14, 0.47],
         },
     }
-
-    back_ir_neg = {
-        "back_support": {
-            "offset_y_mm": 12,
-            "margin_x_mm": 10,
-            "margin_z_mm": 10,
-        }
-    }
-    back_metrics_neg = {
-        "objects": [
-            {"name": "back_slat_1", "bbox_world": {"min": [0.0, -0.35, 0.0], "max": [0.2, -0.25, 0.1]}},
-            {"name": "back_rail_left", "bbox_world": {"min": [0.0, -0.15, 0.0], "max": [0.2, -0.05, 0.1]}},
-        ],
-        "overlaps": {
-            "back_slats_vs_frame": {
-                "total_volume": 1.0e-3,
-                "pairs": [
-                    {
-                        "pair_key": "back_slat_1|back_rail_left",
-                        "left": "back_slat_1",
-                        "right": "back_rail_left",
-                        "volume": 1.0e-3,
-                        "bbox_world": {"min": [0.0, -0.12, 0.0], "max": [0.02, -0.11, 0.04]},
-                        "mtv_bbox": {"axis": "y", "depth_m": 0.01, "sign": -1, "delta_m": [0.0, -0.01, 0.0]},
-                    }
-                ],
-            }
+    direction_pair_right = {
+        "left": "back_slat_7",
+        "right": "back_rail_right",
+        "bbox_world": {
+            "min": [0.018, 0.10, 0.42],
+            "max": [0.024, 0.14, 0.47],
         },
     }
-    back_fixed_neg, back_patches_neg = fix_ir(
-        back_ir_neg,
-        problems=[problem_back_axis_y],
-        metrics=back_metrics_neg,
-        prev_metrics=None,
-        context=None,
-        validation=None,
-    )
-    back_old_neg = _as_int(back_ir_neg.get("back_support", {}).get("offset_y_mm", 0), 0)
-    back_new_neg = _as_int(back_fixed_neg.get("back_support", {}).get("offset_y_mm", 0), 0)
-    back_primary_path_neg = str((back_patches_neg[0] if back_patches_neg else {}).get("path", ""))
-    back_ok_neg = bool((back_primary_path_neg == "back_support.offset_y_mm") and (back_new_neg < back_old_neg))
+    direction_left = _resolve_direction(direction_pair_left, "x", metrics=None)
+    direction_right = _resolve_direction(direction_pair_right, "x", metrics=None)
+    ok_direction_left = bool(direction_left == 1)
+    ok_direction_right = bool(direction_right == -1)
     print(
-        "SELF_TEST_BACK_OFFSET_DIR_NEG "
-        f"offset_y before={back_old_neg} after={back_new_neg} "
-        f"primary_patch={back_primary_path_neg} ok={back_ok_neg}"
+        f"SELF_TEST_BACK_DIRECTION_LEFT axis=x dir={direction_left:+d} "
+        f"expected=+1 ok={ok_direction_left}"
     )
-    print(json.dumps(back_patches_neg, ensure_ascii=False, indent=2))
-
-    back_ir_pos = {
-        "back_support": {
-            "offset_y_mm": 12,
-            "margin_x_mm": 10,
-            "margin_z_mm": 10,
-        }
-    }
-    back_metrics_pos = {
-        "objects": [
-            {"name": "back_slat_1", "bbox_world": {"min": [0.0, -0.10, 0.0], "max": [0.2, 0.00, 0.1]}},
-            {"name": "back_rail_left", "bbox_world": {"min": [0.0, -0.30, 0.0], "max": [0.2, -0.20, 0.1]}},
-        ],
-        "overlaps": {
-            "back_slats_vs_frame": {
-                "total_volume": 1.0e-3,
-                "pairs": [
-                    {
-                        "pair_key": "back_slat_1|back_rail_left",
-                        "left": "back_slat_1",
-                        "right": "back_rail_left",
-                        "volume": 1.0e-3,
-                        "bbox_world": {"min": [0.0, -0.12, 0.0], "max": [0.02, -0.11, 0.04]},
-                        "mtv_bbox": {"axis": "y", "depth_m": 0.01, "sign": 1, "delta_m": [0.0, 0.01, 0.0]},
-                    }
-                ],
-            }
-        },
-    }
-    back_fixed_pos, back_patches_pos = fix_ir(
-        back_ir_pos,
-        problems=[problem_back_axis_y],
-        metrics=back_metrics_pos,
-        prev_metrics=None,
-        context=None,
-        validation=None,
-    )
-    back_old_pos = _as_int(back_ir_pos.get("back_support", {}).get("offset_y_mm", 0), 0)
-    back_new_pos = _as_int(back_fixed_pos.get("back_support", {}).get("offset_y_mm", 0), 0)
-    back_primary_path_pos = str((back_patches_pos[0] if back_patches_pos else {}).get("path", ""))
-    back_ok_pos = bool((back_primary_path_pos == "back_support.offset_y_mm") and (back_new_pos > back_old_pos))
     print(
-        "SELF_TEST_BACK_OFFSET_DIR_POS "
-        f"offset_y before={back_old_pos} after={back_new_pos} "
-        f"primary_patch={back_primary_path_pos} ok={back_ok_pos}"
+        f"SELF_TEST_BACK_DIRECTION_RIGHT axis=x dir={direction_right:+d} "
+        f"expected=-1 ok={ok_direction_right}"
     )
-    print(json.dumps(back_patches_pos, ensure_ascii=False, indent=2))
