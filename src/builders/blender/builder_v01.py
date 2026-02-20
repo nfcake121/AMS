@@ -180,55 +180,20 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
     back_height_mm = _ir_value(frame, "back_height_above_seat_mm", 420.0)
     back_thickness_mm = _ir_value(frame, "back_thickness_mm", 90.0)
 
+    from src.builders.blender.spec.resolve import resolve
+    from src.builders.blender.spec.types import BuildContext
+
+    resolved_spec, resolve_diagnostics = resolve(ir, preset_id=ir.get("preset_id"))
+
     arms = ir.get("arms", {}) if isinstance(ir.get("arms"), dict) else {}
-    arms_type = _canon_arms_type(arms.get("type", "none"))
-    arms_width_mm = _ir_value(arms, "width_mm", 120.0)
-    arms_profile_raw = arms.get("profile", "")
-    if isinstance(arms_profile_raw, str):
-        arms_profile_candidate = arms_profile_raw.strip().lower()
-    else:
-        arms_profile_candidate = ""
-    arms_style_raw = arms.get("style", "box")
+    arms_type = _canon_arms_type(resolved_spec.arms.type)
+    arms_width_mm = max(0.0, float(resolved_spec.arms.width_mm))
+    arms_profile = str(resolved_spec.arms.profile)
+    arms_style_raw = arms.get("style", arms_profile)
     if isinstance(arms_style_raw, str):
         arms_style = arms_style_raw.strip().lower()
     else:
-        arms_style = "box"
-    if arms_style not in {"box", "scandi_frame", "frame_box_open", "scandi_open_frame"}:
-        arms_style = "box"
-    if arms_profile_candidate not in {"box", "scandi_frame", "frame_box_open", "scandi_open_frame"}:
-        arms_profile_candidate = ""
-    if arms_profile_candidate in {"scandi_frame", "frame_box_open", "scandi_open_frame"}:
-        arms_profile = "frame_box_open"
-    elif arms_profile_candidate == "box":
-        # Backward compatibility with style-driven scandi IRs.
-        if arms_style in {"scandi_frame", "frame_box_open", "scandi_open_frame"}:
-            arms_profile = "frame_box_open"
-        else:
-            arms_profile = "box"
-    else:
-        arms_profile = "frame_box_open" if arms_style in {"scandi_frame", "frame_box_open", "scandi_open_frame"} else "box"
-
-    arm_back_height_source = back_height_mm
-    back_support_for_arms = ir.get("back_support", {}) if isinstance(ir.get("back_support"), dict) else {}
-    arm_back_height_source = _ir_value(back_support_for_arms, "height_above_seat_mm", arm_back_height_source)
-    arm_height_mm = max(1.0, _ir_value(arms, "height_mm", seat_height_mm + (arm_back_height_source * 0.35)))
-
-    arm_length_y_mode_raw = arms.get("length_y_mode", "match_seat")
-    if isinstance(arm_length_y_mode_raw, str):
-        arm_length_y_mode = arm_length_y_mode_raw.strip().lower()
-    else:
-        arm_length_y_mode = "match_seat"
-    if arm_length_y_mode not in {"match_seat", "custom"}:
-        arm_length_y_mode = "match_seat"
-    arm_length_y_custom_mm = max(1.0, _ir_value(arms, "length_y_mm", seat_depth_mm))
-    arm_inset_y_front_mm = max(0.0, _ir_value(arms, "inset_y_front_mm", 25.0))
-    arm_inset_y_back_mm = max(0.0, _ir_value(arms, "inset_y_back_mm", 10.0))
-    arm_clearance_to_seat_mm = _clamp(_ir_value(arms, "clearance_to_seat_mm", 2.0), 0.0, 30.0)
-    arm_thickness_mm = _ir_value(arms, "thickness_mm", frame_thickness_mm)
-    arm_thickness_mm = _clamp(arm_thickness_mm, 18.0, 30.0)
-    arm_inner_clearance_mm = _clamp(_ir_value(arms, "inner_clearance_mm", 8.0), 6.0, 12.0)
-    arm_cap_overhang_mm = _clamp(_ir_value(arms, "cap_overhang_mm", _ir_value(arms, "top_overhang_mm", 8.0)), 5.0, 15.0)
-    arm_outer_rail_width_mm = _clamp(_ir_value(arms, "outer_rail_width_mm", 56.0), 40.0, 80.0)
+        arms_style = str(arms_profile)
     arms_total_mm = arms_width_mm * _arms_count(arms_type)
     total_width_mm = seat_total_width_mm + arms_total_mm
 
@@ -260,94 +225,7 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
     slat_rail_width_mm = _ir_value(slats, "rail_width_mm", frame_thickness_mm)
     slat_rail_inset_y_mm = _ir_value(slats, "rail_inset_y_mm", slat_margin_y_mm)
 
-    has_back_support = "back_support" in ir
-    back_support = ir.get("back_support", {}) if isinstance(ir.get("back_support"), dict) else {}
-    back_support_mode = back_support.get("mode", "panel")
-    if not isinstance(back_support_mode, str):
-        back_support_mode = "panel"
-    back_support_mode = back_support_mode.strip().lower()
-    if back_support_mode not in {"panel", "slats", "straps"}:
-        back_support_mode = "panel"
-
-    back_height_mm = _ir_value(back_support, "height_above_seat_mm", back_height_mm)
-    back_thickness_mm = _ir_value(back_support, "thickness_mm", back_thickness_mm)
-    back_offset_y_mm = _ir_value(back_support, "offset_y_mm", 0.0)
-    back_margin_x_mm = _ir_value(back_support, "margin_x_mm", 40.0)
-    back_margin_z_mm = _ir_value(back_support, "margin_z_mm", 30.0)
-    back_rail_inset_mm = _ir_value(back_support, "rail_inset_mm", 0.0)
-    back_rail_width_mm = _ir_value(back_support, "rail_width_mm", frame_thickness_mm)
-    back_rail_depth_mm = _ir_value(back_support, "rail_depth_mm", frame_thickness_mm)
-    back_rail_height_mm = _ir_value(back_support, "rail_height_mm", back_rail_width_mm)
-    bottom_rail_split = _ir_bool(back_support, "bottom_rail_split", False)
-    bottom_rail_gap_mm = _ir_value(back_support, "bottom_rail_gap_mm", 60.0)
-    split_center_requested = _ir_bool(back_support, "split_center", False)
-    bottom_rail_attach_mode = str(back_support.get("bottom_rail_attach_mode", "seat_rear_beam")).strip().lower()
-    if bottom_rail_attach_mode not in {"seat_rear_beam", "none"}:
-        bottom_rail_attach_mode = "seat_rear_beam"
-    raw_frame_layout = back_support.get("frame_layout")
-    if isinstance(raw_frame_layout, str):
-        frame_layout = raw_frame_layout.strip().lower()
-    else:
-        frame_layout = "split_2" if bottom_rail_split else "single"
-    if frame_layout not in {"single", "split_2"}:
-        frame_layout = "single"
-    center_post = back_support.get("center_post", {}) if isinstance(back_support.get("center_post"), dict) else {}
-    center_post_enabled = _ir_bool(center_post, "enabled", False)
-    center_post_thickness_mm = _ir_value(center_post, "thickness_mm", back_rail_width_mm)
-    if "center_post_width_mm" in back_support:
-        center_post_width_mm = _ir_value(back_support, "center_post_width_mm", back_rail_width_mm)
-    elif center_post_enabled or "thickness_mm" in center_post:
-        center_post_width_mm = center_post_thickness_mm
-    else:
-        center_post_width_mm = back_rail_width_mm
-    default_bottom_rail_height_mm = max(10.0, round(back_rail_height_mm * 0.5))
-    has_bottom_rail_height = "bottom_rail_height_mm" in back_support
-    has_legacy_bottom_rail_thickness = "bottom_rail_thickness_mm" in back_support
-    if has_bottom_rail_height:
-        bottom_rail_height_mm = _ir_value(back_support, "bottom_rail_height_mm", default_bottom_rail_height_mm)
-    elif has_legacy_bottom_rail_thickness:
-        legacy_value = _ir_value(back_support, "bottom_rail_thickness_mm", default_bottom_rail_height_mm)
-        if legacy_value < back_rail_height_mm:
-            bottom_rail_height_mm = legacy_value
-        else:
-            bottom_rail_height_mm = default_bottom_rail_height_mm
-    else:
-        bottom_rail_height_mm = default_bottom_rail_height_mm
-
-    back_slats = back_support.get("slats", {}) if isinstance(back_support.get("slats"), dict) else {}
-    back_slat_count = max(1, int(_ir_value(back_slats, "count", 10)))
-    back_slat_width_mm = _ir_value(back_slats, "width_mm", 35.0)
-    back_slat_thickness_mm = _ir_value(back_slats, "thickness_mm", 10.0)
-    back_slat_arc_height_mm = _ir_value(back_slats, "arc_height_mm", 0.0)
-    back_slat_arc_sign = _ir_value(back_slats, "arc_sign", -1.0)
-    back_slat_orientation_raw = back_slats.get("orientation", "vertical")
-    if isinstance(back_slat_orientation_raw, str):
-        back_slat_orientation = back_slat_orientation_raw.strip().lower()
-    else:
-        back_slat_orientation = "vertical"
-    if back_slat_orientation not in {"vertical", "horizontal"}:
-        back_slat_orientation = "vertical"
-    back_slat_layout_raw = back_slats.get("layout", "full")
-    if isinstance(back_slat_layout_raw, str):
-        back_slat_layout = back_slat_layout_raw.strip().lower()
-    else:
-        back_slat_layout = "full"
-    if back_slat_layout not in {"full", "split_center"}:
-        back_slat_layout = "full"
-    has_back_slat_gap = "gap_mm" in back_slats
-    back_slat_gap_mm = max(0.0, _ir_value(back_slats, "gap_mm", 0.0))
-    back_slat_center_gap_mm = max(0.0, _ir_value(back_slats, "center_gap_mm", 0.0))
-    if back_slat_layout == "split_center":
-        split_center_requested = True
-    if center_post_enabled:
-        split_center_requested = True
-    if split_center_requested:
-        frame_layout = "split_2"
-
-    back_straps = back_support.get("straps", {}) if isinstance(back_support.get("straps"), dict) else {}
-    back_strap_count = max(1, int(_ir_value(back_straps, "count", 6)))
-    back_strap_width_mm = _ir_value(back_straps, "width_mm", 30.0)
-    back_strap_thickness_mm = _ir_value(back_straps, "thickness_mm", 6.0)
+    back_spec = resolved_spec.back
 
     # Z placement stack: legs -> base frame -> seat support -> back frame -> arms.
     # Seat support top aligns to seat_height_mm.
@@ -507,571 +385,48 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
                 )
             )
 
-    # Back support uses a frame tied directly to the rear seat rail.
-    back_offset_y_micro_mm = _clamp(back_offset_y_mm, -80.0, 80.0)
-    seat_back_rail_center_y = back_y
-    seat_back_rail_outer_face_y = seat_back_rail_center_y - (frame_thickness_mm / 2.0)
-    y_back_seat = seat_back_rail_outer_face_y
-    seat_rear_rail_center = (0.0, seat_back_rail_center_y, base_frame_center_z)
-    seat_rear_rail_top_z = base_frame_top_z
+    from src.builders.blender.components.back import BackBuildHelpers, build_back
 
-    back_rail_width_mm = max(1.0, back_rail_width_mm)
-    back_rail_depth_mm = max(1.0, back_rail_depth_mm)
-    back_rail_height_mm = max(1.0, back_rail_height_mm)
-    back_frame_member_mm = max(1.0, back_thickness_mm)
-    bottom_rail_height_mm = max(10.0, bottom_rail_height_mm)
-    center_post_width_mm = max(1.0, center_post_width_mm)
-
-    if bottom_rail_attach_mode == "seat_rear_beam":
-        back_frame_plane_y = y_back_seat + back_offset_y_micro_mm
-    else:
-        back_frame_plane_y = (-(seat_depth_mm / 2.0)) + back_offset_y_mm
-    back_frame_base_z = seat_rear_rail_top_z
-    back_frame_top_z = max(back_frame_base_z + 1.0, seat_support_top_z + back_height_mm)
-    back_frame_height_mm = back_frame_top_z - back_frame_base_z
-    back_frame_center_y = back_frame_plane_y - (back_rail_depth_mm / 2.0)
-    back_frame_origin = (0.0, back_frame_plane_y, back_frame_base_z)
-    back_center_z = back_frame_base_z + (back_frame_height_mm / 2.0)
-    back_panel_center = (0.0, back_frame_center_y, back_center_z)
-    rail_left_x = -(seat_total_width_mm / 2.0) + (back_rail_width_mm / 2.0)
-    rail_right_x = (seat_total_width_mm / 2.0) - (back_rail_width_mm / 2.0)
-
-    back_frame_debug_primitives: List[Primitive] = []
-    back_slat_debug_primitives: List[Primitive] = []
-    back_slats_bbox_inner_text = "n/a"
-
-    if has_back_support:
-        back_upright_center_z = back_frame_base_z + (back_frame_height_mm / 2.0)
-
-        back_rail_left = Primitive(
-            name="back_rail_left",
-            shape="beam",
-            dimensions_mm=(back_rail_width_mm, back_rail_depth_mm, back_frame_height_mm),
-            location_mm=(rail_left_x, back_frame_center_y, back_upright_center_z),
-        )
-        back_rail_right = Primitive(
-            name="back_rail_right",
-            shape="beam",
-            dimensions_mm=(back_rail_width_mm, back_rail_depth_mm, back_frame_height_mm),
-            location_mm=(rail_right_x, back_frame_center_y, back_upright_center_z),
-        )
-        plan.primitives.extend([back_rail_left, back_rail_right])
-        back_frame_debug_primitives.extend([back_rail_left, back_rail_right])
-        plan.anchors.extend(
-            [
-                Anchor(name="back_rail_left", location_mm=back_rail_left.location_mm),
-                Anchor(name="back_rail_right", location_mm=back_rail_right.location_mm),
-            ]
-        )
-
-    if not has_back_support:
-        # Backward-compatible panel using frame.back_* dimensions.
-        legacy_back_plane_y = seat_back_rail_outer_face_y - (back_thickness_mm / 2.0) + back_offset_y_mm
-        legacy_back_center_z = seat_support_top_z + (back_height_mm / 2.0)
-        plan.primitives.append(
-            Primitive(
-                name="back_frame",
-                shape="board",
-                dimensions_mm=(total_width_mm, back_thickness_mm, back_height_mm),
-                location_mm=(0.0, legacy_back_plane_y, legacy_back_center_z),
-            )
-        )
-    elif back_support_mode == "panel":
-        plan.primitives.append(
-            Primitive(
-                name="back_panel",
-                shape="board",
-                dimensions_mm=(seat_total_width_mm, back_frame_member_mm, back_frame_height_mm),
-                location_mm=back_panel_center,
-            )
-        )
-    elif back_support_mode == "slats":
-        inset_x_mm = max(3.0, back_rail_inset_mm)
-        inset_z_mm = max(3.0, back_rail_inset_mm)
-        margin_x_mm = max(0.0, back_margin_x_mm)
-        margin_z_mm = max(0.0, back_margin_z_mm)
-
-        frame_inner_min_x = rail_left_x + (back_rail_width_mm / 2.0)
-        frame_inner_max_x = rail_right_x - (back_rail_width_mm / 2.0)
-        frame_inner_width_mm = max(1.0, frame_inner_max_x - frame_inner_min_x)
-
-        bottom_rail_center_z = back_frame_base_z + (bottom_rail_height_mm / 2.0)
-        top_rail_center_z = back_frame_top_z - (back_rail_height_mm / 2.0)
-
-        back_rail_bottom = Primitive(
-            name="back_rail_bottom",
-            shape="beam",
-            dimensions_mm=(frame_inner_width_mm, back_rail_depth_mm, bottom_rail_height_mm),
-            location_mm=(0.0, back_frame_center_y, bottom_rail_center_z),
-        )
-        back_rail_top = Primitive(
-            name="back_rail_top",
-            shape="beam",
-            dimensions_mm=(frame_inner_width_mm, back_rail_depth_mm, back_rail_height_mm),
-            location_mm=(0.0, back_frame_center_y, top_rail_center_z),
-        )
-        inner_bottom_frame_z = bottom_rail_center_z + (bottom_rail_height_mm / 2.0)
-        inner_top_frame_z = top_rail_center_z - (back_rail_height_mm / 2.0)
-        center_gap_half_x = 0.0
-
-        plan.primitives.extend([back_rail_bottom, back_rail_top])
-        back_frame_debug_primitives.extend([back_rail_bottom, back_rail_top])
-        plan.anchors.extend(
-            [
-                Anchor(name="back_rail_bottom", location_mm=back_rail_bottom.location_mm),
-                Anchor(name="back_rail_top", location_mm=back_rail_top.location_mm),
-            ]
-        )
-
-        if frame_layout == "split_2":
-            center_post_height_mm = max(1.0, inner_top_frame_z - inner_bottom_frame_z)
-            center_post_center_z = inner_bottom_frame_z + (center_post_height_mm / 2.0)
-            back_rail_center = Primitive(
-                name="back_rail_center",
-                shape="beam",
-                dimensions_mm=(center_post_width_mm, back_rail_depth_mm, center_post_height_mm),
-                location_mm=(0.0, back_frame_center_y, center_post_center_z),
-            )
-            plan.primitives.append(back_rail_center)
-            back_frame_debug_primitives.append(back_rail_center)
-            plan.anchors.append(Anchor(name="back_rail_center", location_mm=back_rail_center.location_mm))
-            center_gap_half_x = (center_post_width_mm / 2.0) + inset_x_mm
-
-        inner_min_x = frame_inner_min_x + inset_x_mm + margin_x_mm
-        inner_max_x = frame_inner_max_x - inset_x_mm - margin_x_mm
-        if inner_max_x <= inner_min_x:
-            inner_min_x = frame_inner_min_x + inset_x_mm
-            inner_max_x = frame_inner_max_x - inset_x_mm
-        inner_bottom_z = inner_bottom_frame_z + inset_z_mm + margin_z_mm
-        inner_top_z = inner_top_frame_z - inset_z_mm - margin_z_mm
-        if inner_top_z <= inner_bottom_z:
-            inner_bottom_z = inner_bottom_frame_z + inset_z_mm
-            inner_top_z = inner_top_frame_z - inset_z_mm
-        if inner_top_z <= inner_bottom_z:
-            inner_top_z = inner_bottom_z + 1.0
-
-        slat_span_z_mm = max(1.0, inner_top_z - inner_bottom_z)
-        back_slat_center_z = inner_bottom_z + (slat_span_z_mm / 2.0)
-        y_slat_inset_max = max(0.0, ((back_rail_depth_mm - back_slat_thickness_mm) / 2.0) - 0.5)
-        y_slat_inset_mm = min(2.0, y_slat_inset_max)
-        back_slat_center_y = back_frame_center_y - y_slat_inset_mm
-        back_slat_plane_y = back_slat_center_y + (back_slat_thickness_mm / 2.0)
-        split_center_layout = (frame_layout == "split_2") or (back_slat_layout == "split_center")
-        center_gap_mm_effective = max(0.0, back_slat_center_gap_mm)
-        center_split_gap_half_x = max(
-            center_gap_half_x,
-            (center_post_width_mm / 2.0)
-            + max(2.0, center_gap_mm_effective),
-        )
-
-        def _centers_for_range(
-            axis_min: float,
-            axis_max: float,
-            count: int,
-            item_size_mm: float,
-            gap_mm=None,
-        ) -> List[float]:
-            if count <= 0:
-                return []
-            range_min = min(float(axis_min), float(axis_max))
-            range_max = max(float(axis_min), float(axis_max))
-            if count == 1:
-                return [0.5 * (range_min + range_max)]
-            item_size_mm = max(1.0, float(item_size_mm))
-            span_mm = max(0.0, range_max - range_min)
-            if gap_mm is not None and float(gap_mm) > 0.0:
-                required_span_mm = (item_size_mm * count) + (float(gap_mm) * float(count - 1))
-                if required_span_mm <= span_mm:
-                    start_axis = range_min + ((span_mm - required_span_mm) / 2.0) + (item_size_mm / 2.0)
-                    step_axis = item_size_mm + float(gap_mm)
-                    return [start_axis + (step_axis * i) for i in range(count)]
-
-            free_span_mm = max(0.0, span_mm - item_size_mm)
-            step_axis = free_span_mm / float(count - 1)
-            start_axis = range_min + (item_size_mm / 2.0)
-            return [start_axis + (step_axis * i) for i in range(count)]
-
-        plan.anchors.append(Anchor(name="back_slat_plane_y", location_mm=(0.0, back_slat_plane_y, 0.0)))
-        plan.anchors.append(Anchor(name="back_slat_center_z", location_mm=(0.0, 0.0, back_slat_center_z)))
-        plan.anchors.append(
-            Anchor(name="back_frame_inner_rect_min", location_mm=(inner_min_x, back_frame_center_y, inner_bottom_z))
-        )
-        plan.anchors.append(
-            Anchor(name="back_frame_inner_rect_max", location_mm=(inner_max_x, back_frame_center_y, inner_top_z))
-        )
-
-        if back_slat_orientation == "horizontal":
-            row_height_mm = max(1.0, back_slat_width_mm)
-            if has_back_slat_gap and back_slat_gap_mm > 0.0:
-                row_gap_mm = back_slat_gap_mm
-            else:
-                row_gap_mm = 35.0
-            effective_row_count = max(1, int(back_slat_count))
-            inner_height_mm = max(1.0, inner_top_z - inner_bottom_z)
-            packed_height_mm = (effective_row_count * row_height_mm) + ((effective_row_count - 1) * row_gap_mm)
-            if packed_height_mm > (inner_height_mm + 1e-6):
-                denom_mm = row_height_mm + row_gap_mm
-                if denom_mm > 0.0:
-                    max_rows_fit = int((inner_height_mm + row_gap_mm) // denom_mm)
-                else:
-                    max_rows_fit = 2
-                max_rows_fit = max(2, max_rows_fit)
-                effective_row_count = max(2, min(effective_row_count, max_rows_fit))
-
-            row_centers_z = _centers_for_range(
-                inner_bottom_z,
-                inner_top_z,
-                effective_row_count,
-                row_height_mm,
-                gap_mm=row_gap_mm,
-            )
-
-            segments: List[Tuple[str, float, float]] = []
-            left_window_mm = 0.0
-            right_window_mm = 0.0
-            if split_center_layout:
-                left_min_x = inner_min_x
-                left_max_x = min(inner_max_x, -center_split_gap_half_x)
-                right_min_x = max(inner_min_x, center_split_gap_half_x)
-                right_max_x = inner_max_x
-                left_window_mm = max(0.0, left_max_x - left_min_x)
-                right_window_mm = max(0.0, right_max_x - right_min_x)
-                if left_window_mm >= 1.0:
-                    segments.append(("left", left_min_x, left_max_x))
-                if right_window_mm >= 1.0:
-                    segments.append(("right", right_min_x, right_max_x))
-            if not segments:
-                left_window_mm = max(0.0, inner_max_x - inner_min_x)
-                right_window_mm = 0.0
-                segments.append(("full", inner_min_x, inner_max_x))
-
-            back_slats_bbox_inner_text = (
-                f"orientation={back_slat_orientation} "
-                f"layout={back_slat_layout} "
-                f"frame_layout={frame_layout} "
-                f"center_post_width_mm={center_post_width_mm:.3f} "
-                f"center_gap_mm={center_gap_mm_effective:.3f} "
-                f"count={effective_row_count} "
-                f"gap_mm={row_gap_mm:.3f} "
-                f"left_window_mm={left_window_mm:.3f} "
-                f"right_window_mm={right_window_mm:.3f} "
-                f"bottom_split={int(bool(bottom_rail_split))} "
-                f"bottom_gap_mm={float(bottom_rail_gap_mm):.3f} "
-                f"min=({inner_min_x:.3f},{inner_bottom_z:.3f}) "
-                f"max=({inner_max_x:.3f},{inner_top_z:.3f}) y={back_slat_center_y:.3f} "
-                f"center_gap_half={center_split_gap_half_x:.3f}"
-            )
-
-            next_full_index = 1
-            for row_idx, z in enumerate(row_centers_z, start=1):
-                for segment_name, segment_min_x, segment_max_x in segments:
-                    segment_len_x = max(1.0, segment_max_x - segment_min_x)
-                    segment_center_x = segment_min_x + (segment_len_x / 2.0)
-                    if segment_name == "full":
-                        slat_name = f"back_slat_{next_full_index}"
-                        next_full_index += 1
-                    else:
-                        slat_name = f"back_slat_{segment_name}_{row_idx}"
-                    back_slat = Primitive(
-                        name=slat_name,
-                        shape="beam",
-                        dimensions_mm=(segment_len_x, back_slat_thickness_mm, row_height_mm),
-                        location_mm=(segment_center_x, back_slat_center_y, z),
-                        params={
-                            "orientation": "horizontal",
-                            "layout": "split_center" if split_center_layout else "full",
-                            "row_index": float(row_idx),
-                            "segment": segment_name,
-                        },
-                    )
-                    plan.primitives.append(back_slat)
-                    if len(back_slat_debug_primitives) < 2:
-                        back_slat_debug_primitives.append(back_slat)
-                    plan.anchors.append(
-                        Anchor(name=slat_name, location_mm=(segment_center_x, back_slat_center_y, z))
-                    )
-        else:
-            slat_height_mm = slat_span_z_mm
-            left_window_mm = max(0.0, inner_max_x - inner_min_x)
-            right_window_mm = 0.0
-            if split_center_layout:
-                left_min_x = inner_min_x
-                left_max_x = min(inner_max_x, -center_split_gap_half_x)
-                right_min_x = max(inner_min_x, center_split_gap_half_x)
-                right_max_x = inner_max_x
-                left_window_mm = max(0.0, left_max_x - left_min_x)
-                right_window_mm = max(0.0, right_max_x - right_min_x)
-                left_valid = (left_max_x - left_min_x) >= 1.0
-                right_valid = (right_max_x - right_min_x) >= 1.0
-                left_count = (back_slat_count + 1) // 2
-                right_count = back_slat_count // 2
-                if not left_valid and not right_valid:
-                    slat_centers_x = _centers_for_range(inner_min_x, inner_max_x, back_slat_count, back_slat_width_mm)
-                elif not left_valid:
-                    slat_centers_x = _centers_for_range(right_min_x, right_max_x, back_slat_count, back_slat_width_mm)
-                elif not right_valid:
-                    slat_centers_x = _centers_for_range(left_min_x, left_max_x, back_slat_count, back_slat_width_mm)
-                else:
-                    slat_centers_x = _centers_for_range(left_min_x, left_max_x, left_count, back_slat_width_mm)
-                    slat_centers_x.extend(_centers_for_range(right_min_x, right_max_x, right_count, back_slat_width_mm))
-            else:
-                slat_centers_x = _centers_for_range(inner_min_x, inner_max_x, back_slat_count, back_slat_width_mm)
-
-            back_slats_bbox_inner_text = (
-                f"orientation={back_slat_orientation} "
-                f"layout={back_slat_layout} "
-                f"frame_layout={frame_layout} "
-                f"center_post_width_mm={center_post_width_mm:.3f} "
-                f"center_gap_mm={center_gap_mm_effective:.3f} "
-                f"count={len(slat_centers_x)} "
-                f"gap_mm=0.000 "
-                f"left_window_mm={left_window_mm:.3f} "
-                f"right_window_mm={right_window_mm:.3f} "
-                f"bottom_split={int(bool(bottom_rail_split))} "
-                f"bottom_gap_mm={float(bottom_rail_gap_mm):.3f} "
-                f"min=({inner_min_x:.3f},{inner_bottom_z:.3f}) "
-                f"max=({inner_max_x:.3f},{inner_top_z:.3f}) y={back_slat_center_y:.3f} "
-                f"center_gap_half={center_split_gap_half_x:.3f}"
-            )
-
-            for i, x in enumerate(slat_centers_x, start=1):
-                back_slat = Primitive(
-                    name=f"back_slat_{i}",
-                    shape="slat",
-                    dimensions_mm=(back_slat_width_mm, back_slat_thickness_mm, slat_height_mm),
-                    location_mm=(x, back_slat_center_y, back_slat_center_z),
-                    params={
-                        "arc_height_mm": back_slat_arc_height_mm,
-                        "arc_sign": back_slat_arc_sign,
-                        "orientation": "vertical",
-                    },
-                )
-                plan.primitives.append(back_slat)
-                if i <= 2:
-                    back_slat_debug_primitives.append(back_slat)
-                plan.anchors.append(
-                    Anchor(name=f"back_slat_{i}", location_mm=(x, back_slat_center_y, back_slat_center_z))
-                )
-    elif back_support_mode == "straps":
-        strap_center_x = 0.0
-        strap_span_z_mm = max(1.0, (back_frame_height_mm - back_frame_member_mm) - (2.0 * back_margin_z_mm))
-        if back_strap_count == 1:
-            strap_centers_z = [back_frame_base_z + ((back_frame_height_mm - back_frame_member_mm) / 2.0)]
-        else:
-            step_mm = strap_span_z_mm / (back_strap_count - 1)
-            start_z = back_frame_base_z + back_margin_z_mm
-            strap_centers_z = [start_z + (step_mm * i) for i in range(back_strap_count)]
-
-        for i, z in enumerate(strap_centers_z, start=1):
-            plan.primitives.append(
-                Primitive(
-                    name=f"back_strap_{i}",
-                    shape="board",
-                    dimensions_mm=(seat_total_width_mm, back_strap_thickness_mm, back_strap_width_mm),
-                    location_mm=(strap_center_x, back_frame_center_y, z),
-                )
-            )
-
-    if has_back_support:
-        print(f"BACK_ANCHOR y_back_seat={y_back_seat:.3f}")
-        print(
-            "BACK_FRAME "
-            f"y={back_frame_center_y:.3f} "
-            f"plane_y={back_frame_plane_y:.3f} "
-            f"attach_mode={bottom_rail_attach_mode}"
-        )
-        print(f"BACK_SLATS bbox_inner={back_slats_bbox_inner_text}")
-        print(f"[builder_v01] back_frame back_frame_origin={back_frame_origin}")
-        for primitive in back_frame_debug_primitives:
-            bbox = _primitive_bbox_world(primitive)
+    build_ctx = BuildContext(run_id=None, debug=_debug_env_enabled())
+    if build_ctx.debug:
+        for warning in resolve_diagnostics.warnings:
             print(
-                "[builder_v01] back_frame "
-                f"{primitive.name} bbox_world.min={bbox['min']} bbox_world.max={bbox['max']}"
-            )
-        for primitive in back_slat_debug_primitives:
-            bbox = _primitive_bbox_world(primitive)
-            print(
-                "[builder_v01] back_frame "
-                f"{primitive.name} bbox_world.min={bbox['min']} bbox_world.max={bbox['max']}"
+                "RESOLVE_WARNING "
+                f"code={warning.get('code', '')} "
+                f"path={warning.get('path', '')} "
+                f"old={warning.get('old', '')} "
+                f"new={warning.get('new', '')} "
+                f"source={warning.get('source', '')}"
             )
 
-    # Arms: legacy box or open-frame scandi arm.
-    legacy_arm_height_mm = max(frame_thickness_mm * 2.0, seat_height_mm * 0.65)
-    legacy_arm_center_z = base_frame_top_z + (legacy_arm_height_mm / 2.0)
-    seat_front_outer_y = seat_depth_mm / 2.0
-    seat_back_outer_y = -(seat_depth_mm / 2.0)
+    back_result = build_back(
+        plan=plan,
+        spec=back_spec,
+        ctx=build_ctx,
+        ir=ir,
+        helpers=BackBuildHelpers(
+            seat_total_width_mm=seat_total_width_mm,
+            total_width_mm=total_width_mm,
+            seat_depth_mm=seat_depth_mm,
+            frame_thickness_mm=frame_thickness_mm,
+            seat_support_top_z=seat_support_top_z,
+            base_frame_top_z=base_frame_top_z,
+            base_frame_center_z=base_frame_center_z,
+            back_y=back_y,
+        ),
+    )
 
-    def _arm_y_bounds() -> Tuple[float, float, float, float]:
-        usable_min_y = seat_back_outer_y + arm_inset_y_back_mm
-        usable_max_y = seat_front_outer_y - arm_inset_y_front_mm
-        if usable_max_y <= usable_min_y:
-            usable_min_y = seat_back_outer_y + 5.0
-            usable_max_y = seat_front_outer_y - 5.0
-        usable_span_y = max(1.0, usable_max_y - usable_min_y)
+    # Arms: delegated to component (thin seam).
+    from src.builders.blender.components.arms import build_arms
 
-        if arm_length_y_mode == "custom":
-            arm_span_y = min(max(1.0, arm_length_y_custom_mm), usable_span_y)
-        else:
-            arm_span_y = usable_span_y
-        frame_center_y = 0.5 * (usable_min_y + usable_max_y)
-        frame_min_y = frame_center_y - (arm_span_y / 2.0)
-        frame_max_y = frame_center_y + (arm_span_y / 2.0)
-        return frame_min_y, frame_max_y, arm_span_y, frame_center_y
-
-    def _log_arms_build(side: str, arm_primitives: List[Primitive], arm_depth_mm_local: float, arm_height_mm_local: float) -> None:
-        arm_bbox = _primitives_union_bbox(arm_primitives)
-        primitive_names = ",".join(p.name for p in arm_primitives)
-        center_x = 0.5 * (arm_bbox["min"][0] + arm_bbox["max"][0])
-        center_y = 0.5 * (arm_bbox["min"][1] + arm_bbox["max"][1])
-        center_z = 0.5 * (arm_bbox["min"][2] + arm_bbox["max"][2])
-        print(
-            "ARMS_BUILD "
-            f"profile={arms_profile} "
-            f"side={side} "
-            f"dims_mm=(w={arms_width_mm:.3f},h={arm_height_mm_local:.3f},depth={arm_depth_mm_local:.3f}) "
-            f"pos_mm=({center_x:.3f},{center_y:.3f},{center_z:.3f}) "
-            f"bbox_min={arm_bbox['min']} "
-            f"bbox_max={arm_bbox['max']} "
-            f"primitives=[{primitive_names}]"
-        )
-
-    def _add_legacy_arm(side: str) -> None:
-        is_left = side == "left"
-        side_sign = -1.0 if is_left else 1.0
-        arm_center_x = side_sign * ((seat_total_width_mm / 2.0) + (arms_width_mm / 2.0))
-        plan.primitives.append(
-            Primitive(
-                name=f"{side}_arm_frame",
-                shape="board",
-                dimensions_mm=(arms_width_mm, seat_depth_mm, legacy_arm_height_mm),
-                location_mm=(arm_center_x, 0.0, legacy_arm_center_z),
-            )
-        )
-        plan.anchors.append(Anchor(name=f"arm_{side}_zone", location_mm=(arm_center_x, 0.0, seat_height_mm)))
-
-    def build_arm_frame_open(side: str) -> None:
-        is_left = side == "left"
-        side_sign = -1.0 if is_left else 1.0
-        side_prefix = f"arm_{side}"
-        inner_face_x = side_sign * (seat_total_width_mm / 2.0)
-        outer_face_x = side_sign * ((seat_total_width_mm / 2.0) + arms_width_mm)
-
-        frame_min_y, frame_max_y, arm_span_y, frame_center_y = _arm_y_bounds()
-        y_clearance_mm = _clamp(arm_clearance_to_seat_mm, 2.0, 5.0)
-        frame_min_y += (y_clearance_mm / 2.0)
-        frame_max_y -= (y_clearance_mm / 2.0)
-        if frame_max_y <= frame_min_y:
-            frame_min_y, frame_max_y, arm_span_y, frame_center_y = _arm_y_bounds()
-        arm_span_y = max(1.0, frame_max_y - frame_min_y)
-        frame_center_y = 0.5 * (frame_min_y + frame_max_y)
-
-        arm_bottom_z = base_frame_top_z
-        arm_top_z = max(arm_bottom_z + (2.0 * arm_thickness_mm), arm_height_mm)
-        arm_span_z = max(1.0, arm_top_z - arm_bottom_z)
-
-        post_thickness_x = _clamp(arm_thickness_mm, 12.0, max(12.0, arms_width_mm - 6.0))
-        post_depth_y = _clamp(arm_thickness_mm, 12.0, max(12.0, arm_span_y * 0.45))
-        cap_thickness_z = _clamp(arm_thickness_mm, 12.0, max(12.0, arm_span_z * 0.45))
-        top_rail_thickness_z = _clamp(arm_thickness_mm, 12.0, max(12.0, arm_span_z * 0.35))
-
-        structure_top_z = arm_top_z - cap_thickness_z
-        structure_span_z = max(1.0, structure_top_z - arm_bottom_z)
-        structure_center_z = arm_bottom_z + (structure_span_z / 2.0)
-        top_rail_thickness_z = min(top_rail_thickness_z, structure_span_z)
-        top_rail_center_z = structure_top_z - (top_rail_thickness_z / 2.0)
-
-        inner_dist_min = (post_thickness_x / 2.0) + 1.0
-        inner_dist_max = max(inner_dist_min, arms_width_mm - (post_thickness_x / 2.0) - 1.0)
-        inner_post_center_dist = _clamp(
-            arm_inner_clearance_mm + (post_thickness_x / 2.0),
-            inner_dist_min,
-            inner_dist_max,
-        )
-        inner_post_center_x = inner_face_x + (side_sign * inner_post_center_dist)
-
-        back_dist_min = inner_post_center_dist + (post_thickness_x * 0.5)
-        back_dist_max = max(back_dist_min, arms_width_mm - (post_thickness_x / 2.0) - 1.0)
-        back_post_center_dist = _clamp(
-            arms_width_mm - (post_thickness_x / 2.0) - 1.0,
-            back_dist_min,
-            back_dist_max,
-        )
-        back_post_center_x = inner_face_x + (side_sign * back_post_center_dist)
-        top_rail_span_x = max(post_thickness_x, abs(back_post_center_x - inner_post_center_x) + post_thickness_x)
-        top_rail_center_x = 0.5 * (inner_post_center_x + back_post_center_x)
-
-        inner_post_center_y = frame_max_y - (post_depth_y / 2.0)
-        back_post_center_y = frame_min_y + (post_depth_y / 2.0)
-
-        outer_rail_width_x = min(arm_outer_rail_width_mm, max(20.0, arms_width_mm - 2.0))
-        outer_rail_depth_y = post_depth_y
-        outer_rail_center_x = outer_face_x - (side_sign * (outer_rail_width_x / 2.0))
-        outer_rail_center_y = frame_max_y - (outer_rail_depth_y / 2.0)
-        outer_rail_center_z = arm_bottom_z + (arm_span_z / 2.0)
-
-        cap_inner_inset_mm = max(0.0, arm_inner_clearance_mm - 2.0)
-        cap_span_x = max(
-            arm_thickness_mm,
-            min(arms_width_mm + arm_cap_overhang_mm + 2.0, (arms_width_mm - cap_inner_inset_mm) + arm_cap_overhang_mm),
-        )
-        cap_center_dist = cap_inner_inset_mm + (cap_span_x / 2.0)
-        cap_center_x = inner_face_x + (side_sign * cap_center_dist)
-        cap_center_y = frame_center_y
-        cap_center_z = arm_top_z - (cap_thickness_z / 2.0)
-
-        arm_primitives: List[Primitive] = [
-            Primitive(
-                name=f"{side_prefix}_inner_post",
-                shape="beam",
-                dimensions_mm=(post_thickness_x, post_depth_y, structure_span_z),
-                location_mm=(inner_post_center_x, inner_post_center_y, structure_center_z),
-            ),
-            Primitive(
-                name=f"{side_prefix}_back_post",
-                shape="beam",
-                dimensions_mm=(post_thickness_x, post_depth_y, structure_span_z),
-                location_mm=(back_post_center_x, back_post_center_y, structure_center_z),
-            ),
-            Primitive(
-                name=f"{side_prefix}_top_rail",
-                shape="beam",
-                dimensions_mm=(top_rail_span_x, arm_span_y, top_rail_thickness_z),
-                location_mm=(top_rail_center_x, frame_center_y, top_rail_center_z),
-            ),
-            Primitive(
-                name=f"{side_prefix}_cap",
-                shape="board",
-                dimensions_mm=(cap_span_x, arm_span_y, cap_thickness_z),
-                location_mm=(cap_center_x, cap_center_y, cap_center_z),
-            ),
-            Primitive(
-                name=f"{side_prefix}_outer_rail",
-                shape="board",
-                dimensions_mm=(outer_rail_width_x, outer_rail_depth_y, arm_span_z),
-                location_mm=(outer_rail_center_x, outer_rail_center_y, outer_rail_center_z),
-            ),
-        ]
-
-        for primitive in arm_primitives:
-            plan.primitives.append(primitive)
-            plan.anchors.append(Anchor(name=primitive.name, location_mm=primitive.location_mm))
-
-        arm_center_x = 0.5 * (inner_face_x + outer_face_x)
-        arm_center_z = arm_bottom_z + (arm_span_z / 2.0)
-        plan.anchors.append(Anchor(name=f"arm_frame_{side}", location_mm=(arm_center_x, frame_center_y, arm_center_z)))
-        plan.anchors.append(Anchor(name=f"{side_prefix}_zone", location_mm=(arm_center_x, frame_center_y, seat_height_mm)))
-        _log_arms_build(side=side, arm_primitives=arm_primitives, arm_depth_mm_local=arm_span_y, arm_height_mm_local=arm_span_z)
-
-    def _add_arm(side: str) -> None:
-        if arms_profile == "frame_box_open":
-            build_arm_frame_open(side)
-        else:
-            _add_legacy_arm(side)
-
-    if arms_type in {"both", "left"}:
-        _add_arm("left")
-    if arms_type in {"both", "right"}:
-        _add_arm("right")
+    arms_primitives_out: List[Primitive] = []
+    build_arms(
+        plan=plan,
+        spec=resolved_spec,
+        ctx=build_ctx,
+        ir=ir,
+        primitives_out=arms_primitives_out,
+    )
 
     # Leg anchors and leg primitives at corners.
     leg_offset_x = (total_width_mm / 2.0) - (frame_thickness_mm / 2.0)
@@ -1095,35 +450,29 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
         )
 
     # Anchors for zones.
-    if has_back_support:
-        back_anchor_y = back_frame_center_y
-        back_bottom_z = back_frame_base_z
-        back_top_z = back_frame_top_z
-        back_inner_center = (0.0, back_frame_center_y, back_center_z)
-    else:
-        back_anchor_y = seat_back_rail_outer_face_y - (back_thickness_mm / 2.0) + back_offset_y_mm
-        back_bottom_z = seat_support_top_z
-        back_top_z = seat_support_top_z + back_height_mm
-        back_inner_center = (0.0, back_anchor_y, seat_support_top_z + (back_height_mm / 2.0))
+    back_anchor_y = back_result.back_anchor_y
+    back_bottom_z = back_result.back_bottom_z
+    back_top_z = back_result.back_top_z
+    back_inner_center = back_result.back_inner_center
     left_back_corner = (-(seat_total_width_mm / 2.0), back_anchor_y, back_bottom_z)
     right_back_corner = ((seat_total_width_mm / 2.0), back_anchor_y, back_bottom_z)
 
     plan.anchors.extend(
         [
             Anchor(name="seat_zone", location_mm=(0.0, 0.0, seat_support_center_z)),
-            Anchor(name="back_zone", location_mm=back_panel_center),
-            Anchor(name="seat_rear_rail", location_mm=seat_rear_rail_center),
+            Anchor(name="back_zone", location_mm=back_result.back_panel_center),
+            Anchor(name="seat_rear_rail", location_mm=back_result.seat_rear_rail_center),
             Anchor(
                 name="seat_back_rail_center_y",
-                location_mm=(0.0, seat_back_rail_center_y, base_frame_center_z),
+                location_mm=(0.0, back_result.seat_back_rail_center_y, base_frame_center_z),
             ),
             Anchor(
                 name="seat_back_rail_outer_face_y",
-                location_mm=(0.0, seat_back_rail_outer_face_y, base_frame_center_z),
+                location_mm=(0.0, back_result.seat_back_rail_outer_face_y, base_frame_center_z),
             ),
-            Anchor(name="y_back_seat", location_mm=(0.0, y_back_seat, base_frame_center_z)),
-            Anchor(name="seat_back_plane", location_mm=(0.0, seat_back_rail_outer_face_y, back_bottom_z)),
-            Anchor(name="back_frame_origin", location_mm=back_frame_origin),
+            Anchor(name="y_back_seat", location_mm=(0.0, back_result.y_back_seat, base_frame_center_z)),
+            Anchor(name="seat_back_plane", location_mm=(0.0, back_result.seat_back_rail_outer_face_y, back_bottom_z)),
+            Anchor(name="back_frame_origin", location_mm=back_result.back_frame_origin),
             Anchor(name="back_bottom_edge_center", location_mm=(0.0, back_anchor_y, back_bottom_z)),
             Anchor(name="back_top_edge_center", location_mm=(0.0, back_anchor_y, back_top_z)),
             Anchor(name="back_inner_plane_center", location_mm=back_inner_center),
