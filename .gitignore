@@ -32,6 +32,11 @@ checkpoints/
 # Logs
 *.log
 
+# Local debug dumps
+repo_dump*.txt
+codex_diff*
+codex_last_diff*.txt
+
 models/
 *.safetensors
 *.bin

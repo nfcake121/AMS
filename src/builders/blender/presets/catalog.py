@@ -10,6 +10,11 @@ _GLOBAL_DEFAULTS = {
         "width_mm": 120.0,
         "profile": "box",
     },
+    "legs": {
+        "family": "block",
+        "height_mm": 160.0,
+        "params": {},
+    },
     "back": {
         "mode": "panel",
         "frame": {

@@ -1,0 +1,1614 @@
+{
+  "primitives": [
+    {
+      "name": "beam_front",
+      "shape": "beam",
+      "dimensions_mm": [
+        2020.0,
+        34.0,
+        34.0
+      ],
+      "location_mm": [
+        0.0,
+        243.0,
+        394.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "beam_back",
+      "shape": "beam",
+      "dimensions_mm": [
+        2020.0,
+        34.0,
+        34.0
+      ],
+      "location_mm": [
+        0.0,
+        -243.0,
+        394.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "beam_left",
+      "shape": "beam",
+      "dimensions_mm": [
+        34.0,
+        520.0,
+        34.0
+      ],
+      "location_mm": [
+        -993.0,
+        0.0,
+        394.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "beam_right",
+      "shape": "beam",
+      "dimensions_mm": [
+        34.0,
+        520.0,
+        34.0
+      ],
+      "location_mm": [
+        993.0,
+        0.0,
+        394.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "beam_cross_1",
+      "shape": "beam",
+      "dimensions_mm": [
+        34.0,
+        452.0,
+        34.0
+      ],
+      "location_mm": [
+        -488.0,
+        0.0,
+        394.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "beam_cross_2",
+      "shape": "beam",
+      "dimensions_mm": [
+        34.0,
+        452.0,
+        34.0
+      ],
+      "location_mm": [
+        0.0,
+        0.0,
+        394.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "beam_cross_3",
+      "shape": "beam",
+      "dimensions_mm": [
+        34.0,
+        452.0,
+        34.0
+      ],
+      "location_mm": [
+        488.0,
+        0.0,
+        394.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "rail_left",
+      "shape": "beam",
+      "dimensions_mm": [
+        30.0,
+        484.0,
+        30.0
+      ],
+      "location_mm": [
+        -842.0,
+        0.0,
+        396.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "rail_right",
+      "shape": "beam",
+      "dimensions_mm": [
+        30.0,
+        484.0,
+        30.0
+      ],
+      "location_mm": [
+        842.0,
+        0.0,
+        396.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "slat_1",
+      "shape": "slat",
+      "dimensions_mm": [
+        50.0,
+        410.0,
+        12.0
+      ],
+      "location_mm": [
+        -835.0,
+        0.0,
+        424.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {
+        "arc_height_mm": 22.0,
+        "arc_sign": -1.0,
+        "clearance_mm": 4.0,
+        "mount_mode": "rests_on_plane",
+        "mount_offset_mm": 3.0,
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "name": "slat_2",
+      "shape": "slat",
+      "dimensions_mm": [
+        50.0,
+        410.0,
+        12.0
+      ],
+      "location_mm": [
+        -723.666667,
+        0.0,
+        424.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {
+        "arc_height_mm": 22.0,
+        "arc_sign": -1.0,
+        "clearance_mm": 4.0,
+        "mount_mode": "rests_on_plane",
+        "mount_offset_mm": 3.0,
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "name": "slat_3",
+      "shape": "slat",
+      "dimensions_mm": [
+        50.0,
+        410.0,
+        12.0
+      ],
+      "location_mm": [
+        -612.333333,
+        0.0,
+        424.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {
+        "arc_height_mm": 22.0,
+        "arc_sign": -1.0,
+        "clearance_mm": 4.0,
+        "mount_mode": "rests_on_plane",
+        "mount_offset_mm": 3.0,
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "name": "slat_4",
+      "shape": "slat",
+      "dimensions_mm": [
+        50.0,
+        410.0,
+        12.0
+      ],
+      "location_mm": [
+        -501.0,
+        0.0,
+        424.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {
+        "arc_height_mm": 22.0,
+        "arc_sign": -1.0,
+        "clearance_mm": 4.0,
+        "mount_mode": "rests_on_plane",
+        "mount_offset_mm": 3.0,
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "name": "slat_5",
+      "shape": "slat",
+      "dimensions_mm": [
+        50.0,
+        410.0,
+        12.0
+      ],
+      "location_mm": [
+        -389.666667,
+        0.0,
+        424.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {
+        "arc_height_mm": 22.0,
+        "arc_sign": -1.0,
+        "clearance_mm": 4.0,
+        "mount_mode": "rests_on_plane",
+        "mount_offset_mm": 3.0,
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "name": "slat_6",
+      "shape": "slat",
+      "dimensions_mm": [
+        50.0,
+        410.0,
+        12.0
+      ],
+      "location_mm": [
+        -278.333333,
+        0.0,
+        424.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {
+        "arc_height_mm": 22.0,
+        "arc_sign": -1.0,
+        "clearance_mm": 4.0,
+        "mount_mode": "rests_on_plane",
+        "mount_offset_mm": 3.0,
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "name": "slat_7",
+      "shape": "slat",
+      "dimensions_mm": [
+        50.0,
+        410.0,
+        12.0
+      ],
+      "location_mm": [
+        -167.0,
+        0.0,
+        424.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {
+        "arc_height_mm": 22.0,
+        "arc_sign": -1.0,
+        "clearance_mm": 4.0,
+        "mount_mode": "rests_on_plane",
+        "mount_offset_mm": 3.0,
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "name": "slat_8",
+      "shape": "slat",
+      "dimensions_mm": [
+        50.0,
+        410.0,
+        12.0
+      ],
+      "location_mm": [
+        -55.666667,
+        0.0,
+        424.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {
+        "arc_height_mm": 22.0,
+        "arc_sign": -1.0,
+        "clearance_mm": 4.0,
+        "mount_mode": "rests_on_plane",
+        "mount_offset_mm": 3.0,
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "name": "slat_9",
+      "shape": "slat",
+      "dimensions_mm": [
+        50.0,
+        410.0,
+        12.0
+      ],
+      "location_mm": [
+        55.666667,
+        0.0,
+        424.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {
+        "arc_height_mm": 22.0,
+        "arc_sign": -1.0,
+        "clearance_mm": 4.0,
+        "mount_mode": "rests_on_plane",
+        "mount_offset_mm": 3.0,
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "name": "slat_10",
+      "shape": "slat",
+      "dimensions_mm": [
+        50.0,
+        410.0,
+        12.0
+      ],
+      "location_mm": [
+        167.0,
+        0.0,
+        424.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {
+        "arc_height_mm": 22.0,
+        "arc_sign": -1.0,
+        "clearance_mm": 4.0,
+        "mount_mode": "rests_on_plane",
+        "mount_offset_mm": 3.0,
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "name": "slat_11",
+      "shape": "slat",
+      "dimensions_mm": [
+        50.0,
+        410.0,
+        12.0
+      ],
+      "location_mm": [
+        278.333333,
+        0.0,
+        424.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {
+        "arc_height_mm": 22.0,
+        "arc_sign": -1.0,
+        "clearance_mm": 4.0,
+        "mount_mode": "rests_on_plane",
+        "mount_offset_mm": 3.0,
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "name": "slat_12",
+      "shape": "slat",
+      "dimensions_mm": [
+        50.0,
+        410.0,
+        12.0
+      ],
+      "location_mm": [
+        389.666667,
+        0.0,
+        424.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {
+        "arc_height_mm": 22.0,
+        "arc_sign": -1.0,
+        "clearance_mm": 4.0,
+        "mount_mode": "rests_on_plane",
+        "mount_offset_mm": 3.0,
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "name": "slat_13",
+      "shape": "slat",
+      "dimensions_mm": [
+        50.0,
+        410.0,
+        12.0
+      ],
+      "location_mm": [
+        501.0,
+        0.0,
+        424.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {
+        "arc_height_mm": 22.0,
+        "arc_sign": -1.0,
+        "clearance_mm": 4.0,
+        "mount_mode": "rests_on_plane",
+        "mount_offset_mm": 3.0,
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "name": "slat_14",
+      "shape": "slat",
+      "dimensions_mm": [
+        50.0,
+        410.0,
+        12.0
+      ],
+      "location_mm": [
+        612.333333,
+        0.0,
+        424.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {
+        "arc_height_mm": 22.0,
+        "arc_sign": -1.0,
+        "clearance_mm": 4.0,
+        "mount_mode": "rests_on_plane",
+        "mount_offset_mm": 3.0,
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "name": "slat_15",
+      "shape": "slat",
+      "dimensions_mm": [
+        50.0,
+        410.0,
+        12.0
+      ],
+      "location_mm": [
+        723.666667,
+        0.0,
+        424.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {
+        "arc_height_mm": 22.0,
+        "arc_sign": -1.0,
+        "clearance_mm": 4.0,
+        "mount_mode": "rests_on_plane",
+        "mount_offset_mm": 3.0,
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "name": "slat_16",
+      "shape": "slat",
+      "dimensions_mm": [
+        50.0,
+        410.0,
+        12.0
+      ],
+      "location_mm": [
+        835.0,
+        0.0,
+        424.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {
+        "arc_height_mm": 22.0,
+        "arc_sign": -1.0,
+        "clearance_mm": 4.0,
+        "mount_mode": "rests_on_plane",
+        "mount_offset_mm": 3.0,
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "name": "back_rail_left",
+      "shape": "beam",
+      "dimensions_mm": [
+        34.0,
+        34.0,
+        514.0
+      ],
+      "location_mm": [
+        -883.0,
+        -265.0,
+        668.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "back_rail_right",
+      "shape": "beam",
+      "dimensions_mm": [
+        34.0,
+        34.0,
+        514.0
+      ],
+      "location_mm": [
+        883.0,
+        -265.0,
+        668.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "back_rail_bottom",
+      "shape": "beam",
+      "dimensions_mm": [
+        1732.0,
+        34.0,
+        18.0
+      ],
+      "location_mm": [
+        0.0,
+        -265.0,
+        420.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "back_rail_top",
+      "shape": "beam",
+      "dimensions_mm": [
+        1732.0,
+        34.0,
+        34.0
+      ],
+      "location_mm": [
+        0.0,
+        -265.0,
+        908.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "back_rail_center",
+      "shape": "beam",
+      "dimensions_mm": [
+        30.0,
+        34.0,
+        462.0
+      ],
+      "location_mm": [
+        0.0,
+        -265.0,
+        660.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "back_slat_left_1",
+      "shape": "beam",
+      "dimensions_mm": [
+        801.0,
+        14.0,
+        70.0
+      ],
+      "location_mm": [
+        -431.5,
+        -267.0,
+        495.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {
+        "layout": "split_center",
+        "orientation": "horizontal",
+        "row_index": 1.0,
+        "segment": "left"
+      }
+    },
+    {
+      "name": "back_slat_right_1",
+      "shape": "beam",
+      "dimensions_mm": [
+        801.0,
+        14.0,
+        70.0
+      ],
+      "location_mm": [
+        431.5,
+        -267.0,
+        495.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {
+        "layout": "split_center",
+        "orientation": "horizontal",
+        "row_index": 1.0,
+        "segment": "right"
+      }
+    },
+    {
+      "name": "back_slat_left_2",
+      "shape": "beam",
+      "dimensions_mm": [
+        801.0,
+        14.0,
+        70.0
+      ],
+      "location_mm": [
+        -431.5,
+        -267.0,
+        605.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {
+        "layout": "split_center",
+        "orientation": "horizontal",
+        "row_index": 2.0,
+        "segment": "left"
+      }
+    },
+    {
+      "name": "back_slat_right_2",
+      "shape": "beam",
+      "dimensions_mm": [
+        801.0,
+        14.0,
+        70.0
+      ],
+      "location_mm": [
+        431.5,
+        -267.0,
+        605.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {
+        "layout": "split_center",
+        "orientation": "horizontal",
+        "row_index": 2.0,
+        "segment": "right"
+      }
+    },
+    {
+      "name": "back_slat_left_3",
+      "shape": "beam",
+      "dimensions_mm": [
+        801.0,
+        14.0,
+        70.0
+      ],
+      "location_mm": [
+        -431.5,
+        -267.0,
+        715.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {
+        "layout": "split_center",
+        "orientation": "horizontal",
+        "row_index": 3.0,
+        "segment": "left"
+      }
+    },
+    {
+      "name": "back_slat_right_3",
+      "shape": "beam",
+      "dimensions_mm": [
+        801.0,
+        14.0,
+        70.0
+      ],
+      "location_mm": [
+        431.5,
+        -267.0,
+        715.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {
+        "layout": "split_center",
+        "orientation": "horizontal",
+        "row_index": 3.0,
+        "segment": "right"
+      }
+    },
+    {
+      "name": "back_slat_left_4",
+      "shape": "beam",
+      "dimensions_mm": [
+        801.0,
+        14.0,
+        70.0
+      ],
+      "location_mm": [
+        -431.5,
+        -267.0,
+        825.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {
+        "layout": "split_center",
+        "orientation": "horizontal",
+        "row_index": 4.0,
+        "segment": "left"
+      }
+    },
+    {
+      "name": "back_slat_right_4",
+      "shape": "beam",
+      "dimensions_mm": [
+        801.0,
+        14.0,
+        70.0
+      ],
+      "location_mm": [
+        431.5,
+        -267.0,
+        825.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {
+        "layout": "split_center",
+        "orientation": "horizontal",
+        "row_index": 4.0,
+        "segment": "right"
+      }
+    },
+    {
+      "name": "arm_left_inner_post",
+      "shape": "beam",
+      "dimensions_mm": [
+        30.0,
+        30.0,
+        172.0
+      ],
+      "location_mm": [
+        -923.0,
+        219.0,
+        497.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "arm_left_back_post",
+      "shape": "beam",
+      "dimensions_mm": [
+        30.0,
+        30.0,
+        172.0
+      ],
+      "location_mm": [
+        -994.0,
+        -234.0,
+        497.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "arm_left_top_rail",
+      "shape": "beam",
+      "dimensions_mm": [
+        101.0,
+        483.0,
+        30.0
+      ],
+      "location_mm": [
+        -958.5,
+        -7.5,
+        568.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "arm_left_cap",
+      "shape": "board",
+      "dimensions_mm": [
+        112.0,
+        483.0,
+        30.0
+      ],
+      "location_mm": [
+        -962.0,
+        -7.5,
+        598.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "arm_left_outer_rail",
+      "shape": "board",
+      "dimensions_mm": [
+        56.0,
+        30.0,
+        202.0
+      ],
+      "location_mm": [
+        -982.0,
+        219.0,
+        512.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "arm_right_inner_post",
+      "shape": "beam",
+      "dimensions_mm": [
+        30.0,
+        30.0,
+        172.0
+      ],
+      "location_mm": [
+        923.0,
+        219.0,
+        497.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "arm_right_back_post",
+      "shape": "beam",
+      "dimensions_mm": [
+        30.0,
+        30.0,
+        172.0
+      ],
+      "location_mm": [
+        994.0,
+        -234.0,
+        497.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "arm_right_top_rail",
+      "shape": "beam",
+      "dimensions_mm": [
+        101.0,
+        483.0,
+        30.0
+      ],
+      "location_mm": [
+        958.5,
+        -7.5,
+        568.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "arm_right_cap",
+      "shape": "board",
+      "dimensions_mm": [
+        112.0,
+        483.0,
+        30.0
+      ],
+      "location_mm": [
+        962.0,
+        -7.5,
+        598.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "arm_right_outer_rail",
+      "shape": "board",
+      "dimensions_mm": [
+        56.0,
+        30.0,
+        202.0
+      ],
+      "location_mm": [
+        982.0,
+        219.0,
+        512.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "leg_1",
+      "shape": "tapered_cone",
+      "dimensions_mm": [
+        34.0,
+        34.0,
+        150.0
+      ],
+      "location_mm": [
+        -993.0,
+        -243.0,
+        302.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "leg_2",
+      "shape": "tapered_cone",
+      "dimensions_mm": [
+        34.0,
+        34.0,
+        150.0
+      ],
+      "location_mm": [
+        993.0,
+        -243.0,
+        302.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "leg_3",
+      "shape": "tapered_cone",
+      "dimensions_mm": [
+        34.0,
+        34.0,
+        150.0
+      ],
+      "location_mm": [
+        -993.0,
+        243.0,
+        302.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    },
+    {
+      "name": "leg_4",
+      "shape": "tapered_cone",
+      "dimensions_mm": [
+        34.0,
+        34.0,
+        150.0
+      ],
+      "location_mm": [
+        993.0,
+        243.0,
+        302.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "params": {}
+    }
+  ],
+  "anchors": [
+    {
+      "name": "rail_left",
+      "location_mm": [
+        -842.0,
+        0.0,
+        396.0
+      ]
+    },
+    {
+      "name": "rail_right",
+      "location_mm": [
+        842.0,
+        0.0,
+        396.0
+      ]
+    },
+    {
+      "name": "slat_plane_z",
+      "location_mm": [
+        0.0,
+        0.0,
+        411.0
+      ]
+    },
+    {
+      "name": "slat_area_center",
+      "location_mm": [
+        0.0,
+        0.0,
+        424.0
+      ]
+    },
+    {
+      "name": "back_rail_left",
+      "location_mm": [
+        -883.0,
+        -265.0,
+        668.0
+      ]
+    },
+    {
+      "name": "back_rail_right",
+      "location_mm": [
+        883.0,
+        -265.0,
+        668.0
+      ]
+    },
+    {
+      "name": "back_rail_bottom",
+      "location_mm": [
+        0.0,
+        -265.0,
+        420.0
+      ]
+    },
+    {
+      "name": "back_rail_top",
+      "location_mm": [
+        0.0,
+        -265.0,
+        908.0
+      ]
+    },
+    {
+      "name": "back_rail_center",
+      "location_mm": [
+        0.0,
+        -265.0,
+        660.0
+      ]
+    },
+    {
+      "name": "back_slat_plane_y",
+      "location_mm": [
+        0.0,
+        -260.0,
+        0.0
+      ]
+    },
+    {
+      "name": "back_slat_center_z",
+      "location_mm": [
+        0.0,
+        0.0,
+        660.0
+      ]
+    },
+    {
+      "name": "back_frame_inner_rect_min",
+      "location_mm": [
+        -832.0,
+        -265.0,
+        457.0
+      ]
+    },
+    {
+      "name": "back_frame_inner_rect_max",
+      "location_mm": [
+        832.0,
+        -265.0,
+        863.0
+      ]
+    },
+    {
+      "name": "back_slat_left_1",
+      "location_mm": [
+        -431.5,
+        -267.0,
+        495.0
+      ]
+    },
+    {
+      "name": "back_slat_right_1",
+      "location_mm": [
+        431.5,
+        -267.0,
+        495.0
+      ]
+    },
+    {
+      "name": "back_slat_left_2",
+      "location_mm": [
+        -431.5,
+        -267.0,
+        605.0
+      ]
+    },
+    {
+      "name": "back_slat_right_2",
+      "location_mm": [
+        431.5,
+        -267.0,
+        605.0
+      ]
+    },
+    {
+      "name": "back_slat_left_3",
+      "location_mm": [
+        -431.5,
+        -267.0,
+        715.0
+      ]
+    },
+    {
+      "name": "back_slat_right_3",
+      "location_mm": [
+        431.5,
+        -267.0,
+        715.0
+      ]
+    },
+    {
+      "name": "back_slat_left_4",
+      "location_mm": [
+        -431.5,
+        -267.0,
+        825.0
+      ]
+    },
+    {
+      "name": "back_slat_right_4",
+      "location_mm": [
+        431.5,
+        -267.0,
+        825.0
+      ]
+    },
+    {
+      "name": "back_zone",
+      "location_mm": [
+        0.0,
+        -265.0,
+        668.0
+      ]
+    },
+    {
+      "name": "seat_rear_rail",
+      "location_mm": [
+        0.0,
+        -243.0,
+        394.0
+      ]
+    },
+    {
+      "name": "seat_back_rail_center_y",
+      "location_mm": [
+        0.0,
+        -243.0,
+        394.0
+      ]
+    },
+    {
+      "name": "seat_back_rail_outer_face_y",
+      "location_mm": [
+        0.0,
+        -260.0,
+        394.0
+      ]
+    },
+    {
+      "name": "y_back_seat",
+      "location_mm": [
+        0.0,
+        -260.0,
+        394.0
+      ]
+    },
+    {
+      "name": "seat_back_plane",
+      "location_mm": [
+        0.0,
+        -260.0,
+        411.0
+      ]
+    },
+    {
+      "name": "back_frame_origin",
+      "location_mm": [
+        0.0,
+        -248.0,
+        411.0
+      ]
+    },
+    {
+      "name": "back_bottom_edge_center",
+      "location_mm": [
+        0.0,
+        -265.0,
+        411.0
+      ]
+    },
+    {
+      "name": "back_top_edge_center",
+      "location_mm": [
+        0.0,
+        -265.0,
+        925.0
+      ]
+    },
+    {
+      "name": "back_inner_plane_center",
+      "location_mm": [
+        0.0,
+        -265.0,
+        668.0
+      ]
+    },
+    {
+      "name": "left_back_corner",
+      "location_mm": [
+        -900.0,
+        -265.0,
+        411.0
+      ]
+    },
+    {
+      "name": "right_back_corner",
+      "location_mm": [
+        900.0,
+        -265.0,
+        411.0
+      ]
+    },
+    {
+      "name": "arm_left_inner_post",
+      "location_mm": [
+        -923.0,
+        219.0,
+        497.0
+      ]
+    },
+    {
+      "name": "arm_left_back_post",
+      "location_mm": [
+        -994.0,
+        -234.0,
+        497.0
+      ]
+    },
+    {
+      "name": "arm_left_top_rail",
+      "location_mm": [
+        -958.5,
+        -7.5,
+        568.0
+      ]
+    },
+    {
+      "name": "arm_left_cap",
+      "location_mm": [
+        -962.0,
+        -7.5,
+        598.0
+      ]
+    },
+    {
+      "name": "arm_left_outer_rail",
+      "location_mm": [
+        -982.0,
+        219.0,
+        512.0
+      ]
+    },
+    {
+      "name": "arm_frame_left",
+      "location_mm": [
+        -955.0,
+        -7.5,
+        512.0
+      ]
+    },
+    {
+      "name": "arm_left_zone",
+      "location_mm": [
+        -955.0,
+        -7.5,
+        445.0
+      ]
+    },
+    {
+      "name": "arm_right_inner_post",
+      "location_mm": [
+        923.0,
+        219.0,
+        497.0
+      ]
+    },
+    {
+      "name": "arm_right_back_post",
+      "location_mm": [
+        994.0,
+        -234.0,
+        497.0
+      ]
+    },
+    {
+      "name": "arm_right_top_rail",
+      "location_mm": [
+        958.5,
+        -7.5,
+        568.0
+      ]
+    },
+    {
+      "name": "arm_right_cap",
+      "location_mm": [
+        962.0,
+        -7.5,
+        598.0
+      ]
+    },
+    {
+      "name": "arm_right_outer_rail",
+      "location_mm": [
+        982.0,
+        219.0,
+        512.0
+      ]
+    },
+    {
+      "name": "arm_frame_right",
+      "location_mm": [
+        955.0,
+        -7.5,
+        512.0
+      ]
+    },
+    {
+      "name": "arm_right_zone",
+      "location_mm": [
+        955.0,
+        -7.5,
+        445.0
+      ]
+    },
+    {
+      "name": "leg_point_1",
+      "location_mm": [
+        -993.0,
+        -243.0,
+        302.0
+      ]
+    },
+    {
+      "name": "leg_point_2",
+      "location_mm": [
+        993.0,
+        -243.0,
+        302.0
+      ]
+    },
+    {
+      "name": "leg_point_3",
+      "location_mm": [
+        -993.0,
+        243.0,
+        302.0
+      ]
+    },
+    {
+      "name": "leg_point_4",
+      "location_mm": [
+        993.0,
+        243.0,
+        302.0
+      ]
+    },
+    {
+      "name": "seat_zone",
+      "location_mm": [
+        0.0,
+        0.0,
+        428.0
+      ]
+    }
+  ]
+}
