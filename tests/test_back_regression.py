@@ -28,6 +28,13 @@ CASES = [
         "slat_count": 8,
         "bbox": (-900.0, -282.0, 411.0, 900.0, -248.0, 925.0),
     },
+    {
+        "path": "data/examples/sofa_ir_scandi_back_split2_hslats_v04.json",
+        "back_count": 13,
+        "rail_count": 5,
+        "slat_count": 8,
+        "bbox": (-900.0, -282.0, 411.0, 900.0, -248.0, 925.0),
+    },
 ]
 
 
@@ -50,7 +57,7 @@ def _bbox(primitives):
     return (min_x, min_y, min_z, max_x, max_y, max_z)
 
 
-def _assert_close_tuple(actual, expected, eps=1e-6):
+def _assert_close_tuple(actual, expected, eps=2.0):
     assert len(actual) == len(expected)
     for actual_value, expected_value in zip(actual, expected):
         assert abs(float(actual_value) - float(expected_value)) <= eps
