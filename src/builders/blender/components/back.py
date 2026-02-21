@@ -5,6 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Tuple
 
+from src.builders.blender.components.back_strategies import (
+    build_back_panel_strategy,
+    build_back_slats_strategy,
+    build_back_straps_strategy,
+)
 from src.builders.blender.diagnostics import Severity, emit_simple
 from src.builders.blender.geom_utils import clamp, primitive_bbox_world
 from src.builders.blender.plan_types import Anchor, Primitive
@@ -415,199 +420,22 @@ def _build_back_from_spec(plan, spec: BackSpec, ctx: BuildContext, helpers: Back
             )
         )
 
-    def _build_mode_panel() -> None:
-        plan.primitives.append(
-            Primitive(
-                name="back_panel",
-                shape="board",
-                dimensions_mm=(seat_total_width_mm, back_frame_member_mm, back_frame_height_mm),
-                location_mm=back_panel_center,
-            )
-        )
-
-    def _build_mode_straps() -> None:
-        strap_center_x = 0.0
-        strap_span_z_mm = max(1.0, (back_frame_height_mm - back_frame_member_mm) - (2.0 * back_margin_z_mm))
-        effective_back_strap_count = max(1, int(back_strap_count))
-        if effective_back_strap_count == 1:
-            strap_centers_z = [back_frame_base_z + ((back_frame_height_mm - back_frame_member_mm) / 2.0)]
-        else:
-            step_mm = strap_span_z_mm / (effective_back_strap_count - 1)
-            start_z = back_frame_base_z + back_margin_z_mm
-            strap_centers_z = [start_z + (step_mm * i) for i in range(effective_back_strap_count)]
-
-        for i, z in enumerate(strap_centers_z, start=1):
-            plan.primitives.append(
-                Primitive(
-                    name=f"back_strap_{i}",
-                    shape="board",
-                    dimensions_mm=(seat_total_width_mm, back_strap_thickness_mm, back_strap_width_mm),
-                    location_mm=(strap_center_x, back_frame_center_y, z),
-                )
-            )
-
-    def _build_mode_slats() -> None:
-        nonlocal back_slats_bbox_inner_text
-
-        inset_x_mm = max(3.0, back_rail_inset_mm)
-        inset_z_mm = max(3.0, back_rail_inset_mm)
-        margin_x_mm = max(0.0, back_margin_x_mm)
-        margin_z_mm = max(0.0, back_margin_z_mm)
-
-        frame_inner_min_x = rail_left_x + (back_rail_width_mm / 2.0)
-        frame_inner_max_x = rail_right_x - (back_rail_width_mm / 2.0)
-        frame_inner_width_mm = max(1.0, frame_inner_max_x - frame_inner_min_x)
-
-        bottom_rail_center_z = back_frame_base_z + (bottom_rail_height_mm / 2.0)
-        top_rail_center_z = back_frame_top_z - (back_rail_height_mm / 2.0)
-
-        back_rail_bottom = Primitive(
-            name="back_rail_bottom",
-            shape="beam",
-            dimensions_mm=(frame_inner_width_mm, back_rail_depth_mm, bottom_rail_height_mm),
-            location_mm=(0.0, back_frame_center_y, bottom_rail_center_z),
-        )
-        back_rail_top = Primitive(
-            name="back_rail_top",
-            shape="beam",
-            dimensions_mm=(frame_inner_width_mm, back_rail_depth_mm, back_rail_height_mm),
-            location_mm=(0.0, back_frame_center_y, top_rail_center_z),
-        )
-        inner_bottom_frame_z = bottom_rail_center_z + (bottom_rail_height_mm / 2.0)
-        inner_top_frame_z = top_rail_center_z - (back_rail_height_mm / 2.0)
-
-        plan.primitives.extend([back_rail_bottom, back_rail_top])
-        back_frame_debug_primitives.extend([back_rail_bottom, back_rail_top])
-        plan.anchors.extend(
-            [
-                Anchor(name="back_rail_bottom", location_mm=back_rail_bottom.location_mm),
-                Anchor(name="back_rail_top", location_mm=back_rail_top.location_mm),
-            ]
-        )
-
-        if frame_layout == "split_2":
-            center_gap_half_x = build_back_frame_split2(
-                plan=plan,
-                center_post_width_mm=center_post_width_mm,
-                back_rail_depth_mm=back_rail_depth_mm,
-                inner_bottom_frame_z=inner_bottom_frame_z,
-                inner_top_frame_z=inner_top_frame_z,
-                back_frame_center_y=back_frame_center_y,
-                inset_x_mm=inset_x_mm,
-                back_frame_debug_primitives=back_frame_debug_primitives,
-            )
-        else:
-            center_gap_half_x = build_back_frame_full()
-
-        inner_min_x = frame_inner_min_x + inset_x_mm + margin_x_mm
-        inner_max_x = frame_inner_max_x - inset_x_mm - margin_x_mm
-        if inner_max_x <= inner_min_x:
-            inner_min_x = frame_inner_min_x + inset_x_mm
-            inner_max_x = frame_inner_max_x - inset_x_mm
-        inner_bottom_z = inner_bottom_frame_z + inset_z_mm + margin_z_mm
-        inner_top_z = inner_top_frame_z - inset_z_mm - margin_z_mm
-        if inner_top_z <= inner_bottom_z:
-            inner_bottom_z = inner_bottom_frame_z + inset_z_mm
-            inner_top_z = inner_top_frame_z - inset_z_mm
-        if inner_top_z <= inner_bottom_z:
-            inner_top_z = inner_bottom_z + 1.0
-
-        slat_span_z_mm = max(1.0, inner_top_z - inner_bottom_z)
-        back_slat_center_z = inner_bottom_z + (slat_span_z_mm / 2.0)
-        y_slat_inset_max = max(0.0, ((back_rail_depth_mm - back_slat_thickness_mm) / 2.0) - 0.5)
-        y_slat_inset_mm = min(2.0, y_slat_inset_max)
-        back_slat_center_y = back_frame_center_y - y_slat_inset_mm
-        back_slat_plane_y = back_slat_center_y + (back_slat_thickness_mm / 2.0)
-        split_center_layout = (frame_layout == "split_2") or (back_slat_layout == "split_center")
-        center_gap_mm_effective = max(0.0, back_slat_center_gap_mm)
-        center_split_gap_half_x = max(
-            center_gap_half_x,
-            (center_post_width_mm / 2.0)
-            + max(2.0, center_gap_mm_effective),
-        )
-
-        plan.anchors.append(Anchor(name="back_slat_plane_y", location_mm=(0.0, back_slat_plane_y, 0.0)))
-        plan.anchors.append(Anchor(name="back_slat_center_z", location_mm=(0.0, 0.0, back_slat_center_z)))
-        plan.anchors.append(
-            Anchor(name="back_frame_inner_rect_min", location_mm=(inner_min_x, back_frame_center_y, inner_bottom_z))
-        )
-        plan.anchors.append(
-            Anchor(name="back_frame_inner_rect_max", location_mm=(inner_max_x, back_frame_center_y, inner_top_z))
-        )
-
-        def _build_slats_horizontal() -> str:
-            return build_back_horizontal_slats(
-                plan=plan,
-                back_slat_width_mm=back_slat_width_mm,
-                back_slat_thickness_mm=back_slat_thickness_mm,
-                back_slat_count=back_slat_count,
-                has_back_slat_gap=has_back_slat_gap,
-                back_slat_gap_mm=back_slat_gap_mm,
-                split_center_layout=split_center_layout,
-                inner_bottom_z=inner_bottom_z,
-                inner_top_z=inner_top_z,
-                inner_min_x=inner_min_x,
-                inner_max_x=inner_max_x,
-                center_split_gap_half_x=center_split_gap_half_x,
-                back_slat_center_y=back_slat_center_y,
-                back_slat_layout=back_slat_layout,
-                frame_layout=frame_layout,
-                center_post_width_mm=center_post_width_mm,
-                center_gap_mm_effective=center_gap_mm_effective,
-                bottom_rail_split=bottom_rail_split,
-                bottom_rail_gap_mm=bottom_rail_gap_mm,
-                back_slat_debug_primitives=back_slat_debug_primitives,
-            )
-
-        def _build_slats_vertical() -> str:
-            return build_back_vertical_slats(
-                plan=plan,
-                back_slat_width_mm=back_slat_width_mm,
-                back_slat_thickness_mm=back_slat_thickness_mm,
-                back_slat_arc_height_mm=back_slat_arc_height_mm,
-                back_slat_arc_sign=back_slat_arc_sign,
-                back_slat_count=back_slat_count,
-                split_center_layout=split_center_layout,
-                inner_min_x=inner_min_x,
-                inner_max_x=inner_max_x,
-                inner_bottom_z=inner_bottom_z,
-                inner_top_z=inner_top_z,
-                center_split_gap_half_x=center_split_gap_half_x,
-                back_slat_center_y=back_slat_center_y,
-                back_slat_center_z=back_slat_center_z,
-                back_slat_layout=back_slat_layout,
-                frame_layout=frame_layout,
-                center_post_width_mm=center_post_width_mm,
-                center_gap_mm_effective=center_gap_mm_effective,
-                bottom_rail_split=bottom_rail_split,
-                bottom_rail_gap_mm=bottom_rail_gap_mm,
-                back_slat_debug_primitives=back_slat_debug_primitives,
-            )
-
-        slat_orientation_key = "horizontal" if back_slat_orientation == "horizontal" else "vertical"
-        slat_layout_key = "split_center" if back_slat_layout == "split_center" else "full"
-        SLATS_DISPATCH = {
-            ("slats", "horizontal", "full"): _build_slats_horizontal,
-            ("slats", "horizontal", "split_center"): _build_slats_horizontal,
-            ("slats", "vertical", "full"): _build_slats_vertical,
-            ("slats", "vertical", "split_center"): _build_slats_vertical,
-        }
-        back_slats_bbox_inner_text = SLATS_DISPATCH[("slats", slat_orientation_key, slat_layout_key)]()
-
-    def _build_mode_noop() -> None:
-        return
-
-    DISPATCH = {
-        ("panel", None, None): _build_mode_panel,
-        ("straps", None, None): _build_mode_straps,
-        ("slats", "horizontal", "full"): _build_mode_slats,
-        ("slats", "horizontal", "split_center"): _build_mode_slats,
-        ("slats", "vertical", "full"): _build_mode_slats,
-        ("slats", "vertical", "split_center"): _build_mode_slats,
-        ("noop", None, None): _build_mode_noop,
-    }
-
     if not has_back_support:
+        emit_simple(
+            ctx.diag,
+            run_id=ctx.run_id,
+            stage="build",
+            component="back",
+            code="STRATEGY_SELECTED",
+            severity=Severity.INFO,
+            path="back_support.mode",
+            source="computed",
+            payload={
+                "key": {"mode": "legacy", "orientation": None, "layout": None},
+                "handler": "legacy_back_frame",
+            },
+            reason="dispatch back build strategy",
+        )
         _build_legacy_back_frame()
     else:
         dispatch_mode = back_support_mode if back_support_mode in {"panel", "slats", "straps"} else "noop"
@@ -616,7 +444,95 @@ def _build_back_from_spec(plan, spec: BackSpec, ctx: BuildContext, helpers: Back
         if dispatch_mode == "slats":
             dispatch_orientation = "horizontal" if back_slat_orientation == "horizontal" else "vertical"
             dispatch_layout = "split_center" if back_slat_layout == "split_center" else "full"
-        DISPATCH[(dispatch_mode, dispatch_orientation, dispatch_layout)]()
+
+        dispatch_key = (dispatch_mode, dispatch_orientation, dispatch_layout)
+        dispatch_map = {
+            ("panel", None, None): "back_panel",
+            ("straps", None, None): "back_straps",
+            ("slats", "horizontal", "full"): "back_slats",
+            ("slats", "horizontal", "split_center"): "back_slats",
+            ("slats", "vertical", "full"): "back_slats",
+            ("slats", "vertical", "split_center"): "back_slats",
+            ("noop", None, None): "back_noop",
+        }
+        handler_name = dispatch_map[dispatch_key]
+        emit_simple(
+            ctx.diag,
+            run_id=ctx.run_id,
+            stage="build",
+            component="back",
+            code="STRATEGY_SELECTED",
+            severity=Severity.INFO,
+            path="back_support.mode",
+            source="computed",
+            payload={
+                "key": {
+                    "mode": dispatch_mode,
+                    "orientation": dispatch_orientation,
+                    "layout": dispatch_layout,
+                },
+                "handler": handler_name,
+            },
+            reason="dispatch back build strategy",
+        )
+
+        if handler_name == "back_panel":
+            build_back_panel_strategy(
+                plan=plan,
+                seat_total_width_mm=seat_total_width_mm,
+                back_frame_member_mm=back_frame_member_mm,
+                back_frame_height_mm=back_frame_height_mm,
+                back_panel_center=back_panel_center,
+            )
+        elif handler_name == "back_straps":
+            build_back_straps_strategy(
+                plan=plan,
+                back_strap_count=back_strap_count,
+                back_strap_width_mm=back_strap_width_mm,
+                back_strap_thickness_mm=back_strap_thickness_mm,
+                back_frame_height_mm=back_frame_height_mm,
+                back_frame_member_mm=back_frame_member_mm,
+                back_margin_z_mm=back_margin_z_mm,
+                seat_total_width_mm=seat_total_width_mm,
+                back_frame_base_z=back_frame_base_z,
+                back_frame_center_y=back_frame_center_y,
+            )
+        elif handler_name == "back_slats":
+            back_slats_bbox_inner_text = build_back_slats_strategy(
+                plan=plan,
+                back_slat_count=back_slat_count,
+                back_slat_width_mm=back_slat_width_mm,
+                back_slat_thickness_mm=back_slat_thickness_mm,
+                back_slat_arc_height_mm=back_slat_arc_height_mm,
+                back_slat_arc_sign=back_slat_arc_sign,
+                back_slat_orientation=back_slat_orientation,
+                back_slat_layout=back_slat_layout,
+                has_back_slat_gap=has_back_slat_gap,
+                back_slat_gap_mm=back_slat_gap_mm,
+                back_slat_center_gap_mm=back_slat_center_gap_mm,
+                back_rail_inset_mm=back_rail_inset_mm,
+                back_margin_x_mm=back_margin_x_mm,
+                back_margin_z_mm=back_margin_z_mm,
+                back_rail_width_mm=back_rail_width_mm,
+                back_rail_depth_mm=back_rail_depth_mm,
+                back_rail_height_mm=back_rail_height_mm,
+                bottom_rail_height_mm=bottom_rail_height_mm,
+                bottom_rail_split=bottom_rail_split,
+                bottom_rail_gap_mm=bottom_rail_gap_mm,
+                frame_layout=frame_layout,
+                center_post_width_mm=center_post_width_mm,
+                rail_left_x=rail_left_x,
+                rail_right_x=rail_right_x,
+                back_frame_base_z=back_frame_base_z,
+                back_frame_top_z=back_frame_top_z,
+                back_frame_center_y=back_frame_center_y,
+                back_frame_debug_primitives=back_frame_debug_primitives,
+                back_slat_debug_primitives=back_slat_debug_primitives,
+                build_back_frame_split2_fn=build_back_frame_split2,
+                build_back_frame_full_fn=build_back_frame_full,
+                build_back_horizontal_slats_fn=build_back_horizontal_slats,
+                build_back_vertical_slats_fn=build_back_vertical_slats,
+            )
 
     if has_back_support:
         emit_simple(
