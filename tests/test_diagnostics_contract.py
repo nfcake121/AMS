@@ -104,6 +104,47 @@ def test_diagnostics_event_contract_and_stability(monkeypatch):
     assert counts[("build", "builder", "BUILD_START", int(Severity.INFO))] == 1
     assert counts[("build", "builder", "BUILD_DONE", int(Severity.INFO))] == 1
     assert any(stage == "resolve" for stage, _component, _code, _severity in signatures)
+    assert counts[("layout", "layout", "LAYOUT_COMPUTED", int(Severity.INFO))] == 1
+
+
+def test_minimum_event_set_alias_fallback_clamp_and_strategy(monkeypatch):
+    sink = ListDiagnosticsSink()
+    import src.builders.blender.builder_v01 as builder_mod
+
+    monkeypatch.setattr(builder_mod, "_diag_sink_from_env", lambda: sink)
+    ir = _load_ir("data/examples/sofa_ir.json")
+    ir.setdefault("arms", {})["width_mm"] = -10
+    ir.setdefault("arms", {})["profile"] = "scandi_frame"
+    ir.setdefault("back_support", {})["mode"] = "not_supported_mode"
+    ir.setdefault("legs", {})["family"] = 123
+
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        plan = build_plan_from_ir(ir)
+    assert plan.primitives
+    assert buf.getvalue() == ""
+
+    resolve_codes = {
+        event.code
+        for event in sink.events
+        if event.stage == "resolve" and event.component == "resolver"
+    }
+    build_strategy_components = {
+        event.component
+        for event in sink.events
+        if event.stage == "build" and event.code == "STRATEGY_SELECTED"
+    }
+    layout_codes = {
+        event.code
+        for event in sink.events
+        if event.stage == "layout" and event.component == "layout"
+    }
+
+    assert "ARMS_WIDTH_CLAMP" in resolve_codes
+    assert "PROFILE_ALIAS" in resolve_codes
+    assert any(code.endswith("FALLBACK") for code in resolve_codes)
+    assert {"back", "arms", "legs"}.issubset(build_strategy_components)
+    assert "LAYOUT_COMPUTED" in layout_codes
 
 
 def test_emit_simple_contract_and_normalization() -> None:

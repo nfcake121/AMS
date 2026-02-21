@@ -3,7 +3,7 @@
 import os
 import uuid
 
-from src.builders.blender.diagnostics import Severity, make_event
+from src.builders.blender.diagnostics import Severity, emit_simple
 from src.builders.blender.geom_utils import ir_value as _ir_value
 from src.builders.blender.plan_types import Anchor, BuildPlan
 
@@ -214,42 +214,62 @@ def _create_build_context():
 
 
 def _emit_build_start(build_ctx, ir: dict, resolved_spec) -> None:
-    build_ctx.diag.emit(
-        make_event(
-            run_id=build_ctx.run_id,
-            stage="build",
-            component="builder",
-            code="BUILD_START",
-            severity=Severity.INFO,
-            source="computed",
-            reason="build pipeline start",
-            resolved_value={
-                "ir_id": ir.get("id"),
-                "preset_id": ir.get("preset_id"),
-                "style": resolved_spec.style,
-            },
-        )
+    emit_simple(
+        build_ctx.diag,
+        run_id=build_ctx.run_id,
+        stage="build",
+        component="builder",
+        code="BUILD_START",
+        severity=Severity.INFO,
+        source="computed",
+        reason="build pipeline start",
+        resolved_value={
+            "ir_id": ir.get("id"),
+            "preset_id": ir.get("preset_id"),
+            "style": resolved_spec.style,
+        },
     )
 
 
 def _emit_resolve_events(build_ctx, resolve_diagnostics) -> None:
     for event in resolve_diagnostics.warnings:
-        build_ctx.diag.emit(
-            make_event(
-                ts=event.ts,
-                run_id=build_ctx.run_id,
-                stage=event.stage,
-                component=event.component,
-                code=event.code,
-                severity=event.severity,
-                path=event.path,
-                source=event.source,
-                input_value=event.input_value,
-                resolved_value=event.resolved_value,
-                reason=event.reason,
-                meta=event.meta,
-            )
+        emit_simple(
+            build_ctx.diag,
+            ts=event.ts,
+            run_id=build_ctx.run_id,
+            stage=event.stage,
+            component=event.component,
+            code=event.code,
+            severity=event.severity,
+            path=event.path,
+            source=event.source,
+            input_value=event.input_value,
+            resolved_value=event.resolved_value,
+            reason=event.reason,
+            meta=event.meta,
         )
+
+
+def _emit_layout_computed(build_ctx, layout) -> None:
+    emit_simple(
+        build_ctx.diag,
+        run_id=build_ctx.run_id,
+        stage="layout",
+        component="layout",
+        code="LAYOUT_COMPUTED",
+        severity=Severity.INFO,
+        path="layout",
+        source="computed",
+        reason="layout computed",
+        resolved_value={
+            "seat_count": int(layout.seat_count),
+            "seat_top_z": float(layout.seat_top_z),
+            "total_width_mm": float(layout.total_width_mm),
+            "seat_depth_mm": float(layout.seat_depth_mm),
+            "back_plane_y": float(layout.back_plane_y),
+            "floor_z": float(layout.floor_z),
+        },
+    )
 
 
 def _build_components(
@@ -289,21 +309,20 @@ def _build_components(
 
 def _finalize_plan(plan: BuildPlan, *, layout, build_ctx, ir: dict) -> BuildPlan:
     plan.anchors.append(Anchor(name="seat_zone", location_mm=(0.0, 0.0, layout.seat_support_center_z)))
-    build_ctx.diag.emit(
-        make_event(
-            run_id=build_ctx.run_id,
-            stage="build",
-            component="builder",
-            code="BUILD_DONE",
-            severity=Severity.INFO,
-            source="computed",
-            reason="build pipeline done",
-            resolved_value={
-                "ir_id": ir.get("id"),
-                "primitives_count": len(plan.primitives),
-                "anchors_count": len(plan.anchors),
-            },
-        )
+    emit_simple(
+        build_ctx.diag,
+        run_id=build_ctx.run_id,
+        stage="build",
+        component="builder",
+        code="BUILD_DONE",
+        severity=Severity.INFO,
+        source="computed",
+        reason="build pipeline done",
+        resolved_value={
+            "ir_id": ir.get("id"),
+            "primitives_count": len(plan.primitives),
+            "anchors_count": len(plan.anchors),
+        },
     )
     return plan
 
@@ -329,6 +348,7 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
     build_ctx = _create_build_context()
     _emit_build_start(build_ctx, ir, resolved_spec)
     _emit_resolve_events(build_ctx, resolve_diagnostics)
+    _emit_layout_computed(build_ctx, layout)
     _build_components(
         plan,
         seat_frame_inputs=seat_frame_inputs,
