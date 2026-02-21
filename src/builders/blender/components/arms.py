@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import List
 
-from src.builders.blender.diagnostics import make_event
+from src.builders.blender.diagnostics import Severity, make_event
 from src.builders.blender.geom_utils import clamp, ir_value, primitives_union_bbox
 from src.builders.blender.plan_types import Anchor, Primitive
 from src.builders.blender.spec.types import ArmsInputs, BuildContext
@@ -44,7 +44,7 @@ def _log_arms_build(
             stage="build",
             component="arms",
             code="ARMS_BUILD",
-            severity=0,
+            severity=Severity.INFO,
             path="arms",
             source="computed",
             reason="component geometry emitted",
@@ -273,7 +273,7 @@ def build_arms(plan, inputs: ArmsInputs, ctx: BuildContext) -> None:
                 stage="build",
                 component="arms",
                 code="PROFILE_FALLBACK_TO_BOX",
-                severity=1,
+                severity=Severity.WARN,
                 path="arms.profile",
                 source="fallback",
                 input_value=profile,
@@ -289,7 +289,7 @@ def build_arms(plan, inputs: ArmsInputs, ctx: BuildContext) -> None:
                 stage="build",
                 component="arms",
                 code="STRATEGY_SELECTED",
-                severity=0,
+                severity=Severity.INFO,
                 path="arms.profile",
                 source="computed",
                 resolved_value={"profile": profile, "arms_type": arms_type},

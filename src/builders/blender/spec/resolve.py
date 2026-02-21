@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.builders.blender.diagnostics import make_event
+from src.builders.blender.diagnostics import Severity, make_event
 from src.builders.blender.spec.catalog import default_preset_id, get_preset
 from src.builders.blender.spec.types import (
     ArmsSpec,
@@ -45,7 +45,7 @@ def _warn(
     old,
     new,
     source: str = "fallback",
-    severity: int = 1,
+    severity: int = Severity.WARN,
     component: str = "resolver",
     meta: dict | None = None,
 ) -> None:
@@ -231,7 +231,7 @@ def resolve_back_spec(ir: dict, preset: dict, diagnostics: ResolveDiagnostics) -
             old=None,
             new=preset_back.get("mode", "panel"),
             source="global",
-            severity=0,
+            severity=Severity.INFO,
             meta={"rule": "missing->default"},
         )
 
@@ -703,7 +703,7 @@ def resolve(ir: dict, preset_id: str | None = None) -> tuple[ResolvedSpec, Resol
             old=profile_raw,
             new=profile,
             source="computed",
-            severity=0,
+            severity=Severity.INFO,
             meta={"rule": "alias->canonical"},
         )
     if profile_fallback:

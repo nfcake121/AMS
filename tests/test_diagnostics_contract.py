@@ -12,7 +12,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.builders.blender.builder_v01 import build_plan_from_ir
-from src.builders.blender.diagnostics import Event
+from src.builders.blender.diagnostics import Event, Severity, VALID_SEVERITIES
 
 
 class ListDiagnosticsSink:
@@ -75,7 +75,7 @@ def test_diagnostics_event_contract_and_stability(monkeypatch):
         payload = event.to_dict()
         assert set(payload.keys()) == required_keys
         assert isinstance(payload["run_id"], str)
-        assert payload["severity"] in {0, 1, 2}
+        assert payload["severity"] in VALID_SEVERITIES
         assert payload["stage"] in {"resolve", "build"}
         assert isinstance(payload["component"], str) and payload["component"]
         assert isinstance(payload["code"], str) and payload["code"]
@@ -92,6 +92,6 @@ def test_diagnostics_event_contract_and_stability(monkeypatch):
         )
 
     counts = Counter(signatures)
-    assert counts[("build", "builder", "BUILD_START", 0)] == 1
-    assert counts[("build", "builder", "BUILD_DONE", 0)] == 1
+    assert counts[("build", "builder", "BUILD_START", int(Severity.INFO))] == 1
+    assert counts[("build", "builder", "BUILD_DONE", int(Severity.INFO))] == 1
     assert any(stage == "resolve" for stage, _component, _code, _severity in signatures)

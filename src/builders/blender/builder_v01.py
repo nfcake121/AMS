@@ -3,7 +3,7 @@
 import os
 import uuid
 
-from src.builders.blender.diagnostics import make_event
+from src.builders.blender.diagnostics import Severity, make_event
 from src.builders.blender.geom_utils import ir_value as _ir_value
 from src.builders.blender.plan_types import Anchor, BuildPlan
 
@@ -142,7 +142,7 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
             stage="build",
             component="builder",
             code="BUILD_START",
-            severity=0,
+            severity=Severity.INFO,
             source="computed",
             reason="build pipeline start",
             resolved_value={
@@ -280,7 +280,7 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
             stage="build",
             component="builder",
             code="BUILD_DONE",
-            severity=0,
+            severity=Severity.INFO,
             source="computed",
             reason="build pipeline done",
             resolved_value={

@@ -5,8 +5,27 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from enum import IntEnum
 from pathlib import Path
 from typing import Any, Protocol
+
+
+class Severity(IntEnum):
+    INFO = 0
+    WARN = 1
+    ERROR = 2
+    FATAL = 3
+
+
+SEVERITY_LABELS: dict[int, str] = {
+    int(Severity.INFO): "info",
+    int(Severity.WARN): "warn",
+    int(Severity.ERROR): "error",
+    int(Severity.FATAL): "fatal",
+}
+SEVERITY_MIN = int(Severity.INFO)
+SEVERITY_MAX = int(Severity.FATAL)
+VALID_SEVERITIES = frozenset(SEVERITY_LABELS.keys())
 
 
 def utc_now_iso() -> str:
@@ -52,13 +71,17 @@ def make_event(
 ) -> Event:
     if not ts:
         ts = utc_now_iso()
+    try:
+        severity_value = int(severity)
+    except (TypeError, ValueError):
+        severity_value = int(Severity.INFO)
     return Event(
         ts=ts,
         run_id=run_id,
         stage=stage,
         component=component,
         code=code,
-        severity=max(0, min(2, int(severity))),
+        severity=max(SEVERITY_MIN, min(SEVERITY_MAX, severity_value)),
         path=path,
         source=source,
         input_value=input_value,

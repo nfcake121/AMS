@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Tuple
 
-from src.builders.blender.diagnostics import make_event
+from src.builders.blender.diagnostics import Severity, make_event
 from src.builders.blender.geom_utils import clamp, primitive_bbox_world
 from src.builders.blender.plan_types import Anchor, Primitive
 from src.builders.blender.spec.types import BackInputs, BackSpec, BuildContext
@@ -625,7 +625,7 @@ def _build_back_from_spec(plan, spec: BackSpec, ctx: BuildContext, helpers: Back
                 stage="build",
                 component="back",
                 code="BACK_BUILD",
-                severity=0,
+                severity=Severity.INFO,
                 path="back_support",
                 source="computed",
                 resolved_value={
@@ -647,7 +647,7 @@ def _build_back_from_spec(plan, spec: BackSpec, ctx: BuildContext, helpers: Back
                     stage="build",
                     component="back",
                     code="BACK_FRAME_BBOX",
-                    severity=0,
+                    severity=Severity.INFO,
                     path=f"back_support.frame.{primitive.name}",
                     source="computed",
                     resolved_value={
@@ -666,7 +666,7 @@ def _build_back_from_spec(plan, spec: BackSpec, ctx: BuildContext, helpers: Back
                     stage="build",
                     component="back",
                     code="BACK_SLAT_BBOX",
-                    severity=0,
+                    severity=Severity.INFO,
                     path=f"back_support.slats.{primitive.name}",
                     source="computed",
                     resolved_value={
@@ -696,7 +696,7 @@ def _build_back_from_spec(plan, spec: BackSpec, ctx: BuildContext, helpers: Back
                 stage="build",
                 component="back",
                 code="BACK_BUILD_DEBUG",
-                severity=0,
+                severity=Severity.INFO,
                 path="back_support.center_post",
                 source="computed",
                 input_value={"enabled": center_post_enabled, "frame_layout": frame_layout},
