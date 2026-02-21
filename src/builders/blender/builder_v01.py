@@ -55,28 +55,27 @@ def _diag_sink_from_env():
     return NoopDiagnosticsSink()
 
 
-def build_plan_from_ir(ir: dict) -> BuildPlan:
-    """Create a sofa-frame geometry plan from resolved IR.
-
-    Coordinate system: X is width (left/right), Y is depth (front/back),
-    Z is up. seat_height_mm defines the top of the seat support board.
-    """
-    from src.builders.blender.layout import compute_layout
+def _resolve_spec(ir: dict):
     from src.builders.blender.spec.resolve import resolve
+
+    return resolve(ir, preset_id=ir.get("preset_id"))
+
+
+def _compute_layout(ir: dict, resolved_spec):
+    from src.builders.blender.layout import compute_layout
+
+    return compute_layout(ir, resolved_spec)
+
+
+def _make_component_inputs(ir: dict, resolved_spec, layout):
     from src.builders.blender.spec.types import (
         ArmsInputs,
         BackInputs,
-        BuildContext,
         LegsInputs,
         SeatFrameInputs,
         SeatSlatsInputs,
     )
 
-    # 1) Resolve IR + preset defaults, then compute shared layout scalars.
-    resolved_spec, resolve_diagnostics = resolve(ir, preset_id=ir.get("preset_id"))
-    layout = compute_layout(ir, resolved_spec)
-
-    # 2) Collect/normalize raw config values still needed by component inputs.
     arms = ir.get("arms", {}) if isinstance(ir.get("arms"), dict) else {}
     arms_type = _canon_arms_type(resolved_spec.arms.type)
     arms_width_mm = max(0.0, float(resolved_spec.arms.width_mm))
@@ -118,8 +117,7 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
     slat_rail_width_mm = _ir_value(slats, "rail_width_mm", frame_thickness_mm)
     slat_rail_inset_y_mm = _ir_value(slats, "rail_inset_y_mm", slat_margin_y_mm)
 
-    # 3) Initialize plan metadata used by debug/tools.
-    plan = BuildPlan(metadata={
+    metadata = {
         "seat_count": str(layout.seat_count),
         "legs_family": str(legs_family),
         "arms_type": str(arms_type),
@@ -127,49 +125,7 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
         "arms_style": str(arms_style),
         "seat_total_width_mm": str(layout.seat_total_width_mm),
         "total_width_mm": str(layout.total_width_mm),
-    })
-
-    # 4) Build runtime context (debug + diagnostics sink).
-    build_ctx = BuildContext(
-        run_id=uuid.uuid4().hex,
-        debug=_debug_env_enabled(),
-        diag=_diag_sink_from_env(),
-    )
-    # Structured lifecycle event for external logging/analysis.
-    build_ctx.diag.emit(
-        make_event(
-            run_id=build_ctx.run_id,
-            stage="build",
-            component="builder",
-            code="BUILD_START",
-            severity=Severity.INFO,
-            source="computed",
-            reason="build pipeline start",
-            resolved_value={
-                "ir_id": ir.get("id"),
-                "preset_id": ir.get("preset_id"),
-                "style": resolved_spec.style,
-            },
-        )
-    )
-    for event in resolve_diagnostics.warnings:
-        build_ctx.diag.emit(
-            make_event(
-                ts=event.ts,
-                run_id=build_ctx.run_id,
-                stage=event.stage,
-                component=event.component,
-                code=event.code,
-                severity=event.severity,
-                path=event.path,
-                source=event.source,
-                input_value=event.input_value,
-                resolved_value=event.resolved_value,
-                reason=event.reason,
-                meta=event.meta,
-            )
-        )
-    # 5) Materialize per-component input objects (no geometry logic here).
+    }
     seat_frame_inputs = SeatFrameInputs(
         seat_count=layout.seat_count,
         total_width_mm=layout.total_width_mm,
@@ -237,43 +193,102 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
         seat_depth_mm=layout.seat_depth_mm,
         base_frame_top_z=layout.base_frame_top_z,
     )
+    return (
+        seat_frame_inputs,
+        seat_slats_inputs,
+        back_inputs,
+        arms_inputs,
+        legs_inputs,
+        metadata,
+    )
 
-    # 6) Build components in stable order; order is regression-sensitive.
+
+def _create_build_context():
+    from src.builders.blender.spec.types import BuildContext
+
+    return BuildContext(
+        run_id=uuid.uuid4().hex,
+        debug=_debug_env_enabled(),
+        diag=_diag_sink_from_env(),
+    )
+
+
+def _emit_build_start(build_ctx, ir: dict, resolved_spec) -> None:
+    build_ctx.diag.emit(
+        make_event(
+            run_id=build_ctx.run_id,
+            stage="build",
+            component="builder",
+            code="BUILD_START",
+            severity=Severity.INFO,
+            source="computed",
+            reason="build pipeline start",
+            resolved_value={
+                "ir_id": ir.get("id"),
+                "preset_id": ir.get("preset_id"),
+                "style": resolved_spec.style,
+            },
+        )
+    )
+
+
+def _emit_resolve_events(build_ctx, resolve_diagnostics) -> None:
+    for event in resolve_diagnostics.warnings:
+        build_ctx.diag.emit(
+            make_event(
+                ts=event.ts,
+                run_id=build_ctx.run_id,
+                stage=event.stage,
+                component=event.component,
+                code=event.code,
+                severity=event.severity,
+                path=event.path,
+                source=event.source,
+                input_value=event.input_value,
+                resolved_value=event.resolved_value,
+                reason=event.reason,
+                meta=event.meta,
+            )
+        )
+
+
+def _build_components(
+    plan: BuildPlan,
+    *,
+    seat_frame_inputs,
+    seat_slats_inputs,
+    back_inputs,
+    arms_inputs,
+    legs_inputs,
+    build_ctx,
+) -> None:
+    from src.builders.blender.components.arms import build_arms
+    from src.builders.blender.components.back import build_back
+    from src.builders.blender.components.legs import build_legs
     from src.builders.blender.components.seat_frame import build_seat_frame
+    from src.builders.blender.components.seat_slats import build_seat_slats
 
     build_seat_frame(
         plan=plan,
         inputs=seat_frame_inputs,
         ctx=build_ctx,
     )
-
-    from src.builders.blender.components.seat_slats import build_seat_slats
-
     build_seat_slats(
         plan=plan,
         inputs=seat_slats_inputs,
         ctx=build_ctx,
     )
-
-    from src.builders.blender.components.back import build_back
-
     build_back(plan=plan, inputs=back_inputs, ctx=build_ctx)
-
-    # Arms/legs are also delegated via thin seams.
-    from src.builders.blender.components.arms import build_arms
-    from src.builders.blender.components.legs import build_legs
-
     build_arms(plan=plan, inputs=arms_inputs, ctx=build_ctx)
-
     build_legs(
         plan=plan,
         inputs=legs_inputs,
         ctx=build_ctx,
     )
 
-    # Keep legacy seat zone anchor for downstream tools/validators.
+
+def _finalize_plan(plan: BuildPlan, *, layout, build_ctx, ir: dict) -> BuildPlan:
     plan.anchors.append(Anchor(name="seat_zone", location_mm=(0.0, 0.0, layout.seat_support_center_z)))
-    # Structured lifecycle event with resulting plan sizes.
     build_ctx.diag.emit(
         make_event(
             run_id=build_ctx.run_id,
@@ -290,5 +305,37 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
             },
         )
     )
-
     return plan
+
+
+def build_plan_from_ir(ir: dict) -> BuildPlan:
+    """Create a sofa-frame geometry plan from resolved IR.
+
+    Coordinate system: X is width (left/right), Y is depth (front/back),
+    Z is up. seat_height_mm defines the top of the seat support board.
+    """
+    resolved_spec, resolve_diagnostics = _resolve_spec(ir)
+    layout = _compute_layout(ir, resolved_spec)
+    (
+        seat_frame_inputs,
+        seat_slats_inputs,
+        back_inputs,
+        arms_inputs,
+        legs_inputs,
+        metadata,
+    ) = _make_component_inputs(ir, resolved_spec, layout)
+
+    plan = BuildPlan(metadata=metadata)
+    build_ctx = _create_build_context()
+    _emit_build_start(build_ctx, ir, resolved_spec)
+    _emit_resolve_events(build_ctx, resolve_diagnostics)
+    _build_components(
+        plan,
+        seat_frame_inputs=seat_frame_inputs,
+        seat_slats_inputs=seat_slats_inputs,
+        back_inputs=back_inputs,
+        arms_inputs=arms_inputs,
+        legs_inputs=legs_inputs,
+        build_ctx=build_ctx,
+    )
+    return _finalize_plan(plan, layout=layout, build_ctx=build_ctx, ir=ir)
