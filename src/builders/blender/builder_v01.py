@@ -308,6 +308,21 @@ def _build_components(
     )
 
 
+def _maybe_run_llm_stub(ir: dict, resolve_diagnostics) -> None:
+    try:
+        from src.pipeline.llm_stub import maybe_generate_suggestions_from_env
+
+        maybe_generate_suggestions_from_env(
+            ir=ir,
+            events=resolve_diagnostics.warnings,
+            metrics=None,
+            validators=None,
+        )
+    except Exception:
+        # LLM stub is optional and must never block the build pipeline.
+        return
+
+
 def build_plan_from_ir(ir: dict) -> BuildPlan:
     """Create a sofa-frame geometry plan from resolved IR.
 
@@ -339,4 +354,6 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
         legs_inputs=legs_inputs,
         build_ctx=build_ctx,
     )
-    return finalize_plan(plan, layout=layout, build_ctx=build_ctx, ir=ir)
+    finalized = finalize_plan(plan, layout=layout, build_ctx=build_ctx, ir=ir)
+    _maybe_run_llm_stub(ir=ir, resolve_diagnostics=resolve_diagnostics)
+    return finalized

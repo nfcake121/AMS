@@ -32,6 +32,8 @@ VALID_SOURCES = frozenset({"ir", "preset", "global", "fallback", "computed"})
 VALID_COMPONENTS = frozenset(
     {"resolver", "layout", "seat_frame", "seat_slats", "back", "arms", "legs", "builder"}
 )
+REQUIRED_BASELINE_EVENT_CODES = frozenset({"BUILD_START", "BUILD_DONE", "LAYOUT_COMPUTED"})
+REQUIRED_BASELINE_STAGES = frozenset({"resolve", "layout", "build"})
 DEFAULT_STAGE = "build"
 DEFAULT_SOURCE = "computed"
 DEFAULT_COMPONENT = "builder"
@@ -216,3 +218,21 @@ class JsonlDiagnosticsSink:
         line = json.dumps(normalized.to_dict(), ensure_ascii=False, sort_keys=True)
         with self._path.open("a", encoding="utf-8") as handle:
             handle.write(f"{line}\n")
+
+
+def build_diagnostics_summary(events: list[Event]) -> dict[str, Any]:
+    """Return a compact diagnostics summary for reports and stubs."""
+    by_stage: dict[str, int] = {}
+    by_code: dict[str, int] = {}
+    by_severity: dict[str, int] = {}
+    for event in events:
+        by_stage[event.stage] = by_stage.get(event.stage, 0) + 1
+        by_code[event.code] = by_code.get(event.code, 0) + 1
+        severity_key = SEVERITY_LABELS.get(int(event.severity), str(int(event.severity)))
+        by_severity[severity_key] = by_severity.get(severity_key, 0) + 1
+    return {
+        "total": len(events),
+        "by_stage": dict(sorted(by_stage.items())),
+        "by_code": dict(sorted(by_code.items())),
+        "by_severity": dict(sorted(by_severity.items())),
+    }
