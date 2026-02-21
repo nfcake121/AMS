@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Tuple
 
-from src.builders.blender.diagnostics import Severity, make_event
+from src.builders.blender.diagnostics import Severity, emit_simple
 from src.builders.blender.geom_utils import clamp, primitive_bbox_world
 from src.builders.blender.plan_types import Anchor, Primitive
 from src.builders.blender.spec.types import BackInputs, BackSpec, BuildContext
@@ -619,63 +619,60 @@ def _build_back_from_spec(plan, spec: BackSpec, ctx: BuildContext, helpers: Back
         DISPATCH[(dispatch_mode, dispatch_orientation, dispatch_layout)]()
 
     if has_back_support:
-        ctx.diag.emit(
-            make_event(
-                run_id=ctx.run_id,
-                stage="build",
-                component="back",
-                code="BACK_BUILD",
-                severity=Severity.INFO,
-                path="back_support",
-                source="computed",
-                resolved_value={
-                    "y_back_seat": y_back_seat,
-                    "back_frame_center_y": back_frame_center_y,
-                    "back_frame_plane_y": back_frame_plane_y,
-                    "attach_mode": bottom_rail_attach_mode,
-                    "back_frame_origin": back_frame_origin,
-                    "slats_bbox_inner": back_slats_bbox_inner_text,
-                },
-                reason="back support geometry built",
-            )
+        emit_simple(
+            ctx.diag,
+            run_id=ctx.run_id,
+            stage="build",
+            component="back",
+            code="BACK_BUILD",
+            severity=Severity.INFO,
+            path="back_support",
+            source="computed",
+            resolved_value={
+                "y_back_seat": y_back_seat,
+                "back_frame_center_y": back_frame_center_y,
+                "back_frame_plane_y": back_frame_plane_y,
+                "attach_mode": bottom_rail_attach_mode,
+                "back_frame_origin": back_frame_origin,
+                "slats_bbox_inner": back_slats_bbox_inner_text,
+            },
+            reason="back support geometry built",
         )
         for primitive in back_frame_debug_primitives:
             bbox = primitive_bbox_world(primitive)
-            ctx.diag.emit(
-                make_event(
-                    run_id=ctx.run_id,
-                    stage="build",
-                    component="back",
-                    code="BACK_FRAME_BBOX",
-                    severity=Severity.INFO,
-                    path=f"back_support.frame.{primitive.name}",
-                    source="computed",
-                    resolved_value={
-                        "name": primitive.name,
-                        "bbox_min": bbox["min"],
-                        "bbox_max": bbox["max"],
-                    },
-                    reason="frame primitive bbox",
-                )
+            emit_simple(
+                ctx.diag,
+                run_id=ctx.run_id,
+                stage="build",
+                component="back",
+                code="BACK_FRAME_BBOX",
+                severity=Severity.INFO,
+                path=f"back_support.frame.{primitive.name}",
+                source="computed",
+                resolved_value={
+                    "name": primitive.name,
+                    "bbox_min": bbox["min"],
+                    "bbox_max": bbox["max"],
+                },
+                reason="frame primitive bbox",
             )
         for primitive in back_slat_debug_primitives:
             bbox = primitive_bbox_world(primitive)
-            ctx.diag.emit(
-                make_event(
-                    run_id=ctx.run_id,
-                    stage="build",
-                    component="back",
-                    code="BACK_SLAT_BBOX",
-                    severity=Severity.INFO,
-                    path=f"back_support.slats.{primitive.name}",
-                    source="computed",
-                    resolved_value={
-                        "name": primitive.name,
-                        "bbox_min": bbox["min"],
-                        "bbox_max": bbox["max"],
-                    },
-                    reason="slat primitive bbox",
-                )
+            emit_simple(
+                ctx.diag,
+                run_id=ctx.run_id,
+                stage="build",
+                component="back",
+                code="BACK_SLAT_BBOX",
+                severity=Severity.INFO,
+                path=f"back_support.slats.{primitive.name}",
+                source="computed",
+                resolved_value={
+                    "name": primitive.name,
+                    "bbox_min": bbox["min"],
+                    "bbox_max": bbox["max"],
+                },
+                reason="slat primitive bbox",
             )
 
     if has_back_support:
@@ -690,19 +687,18 @@ def _build_back_from_spec(plan, spec: BackSpec, ctx: BuildContext, helpers: Back
         back_inner_center = (0.0, back_anchor_y, seat_support_top_z + (back_height_mm / 2.0))
 
     if ctx.debug and center_post_enabled and frame_layout != "split_2":
-        ctx.diag.emit(
-            make_event(
-                run_id=ctx.run_id,
-                stage="build",
-                component="back",
-                code="BACK_BUILD_DEBUG",
-                severity=Severity.INFO,
-                path="back_support.center_post",
-                source="computed",
-                input_value={"enabled": center_post_enabled, "frame_layout": frame_layout},
-                resolved_value="split_2_expected",
-                reason="center_post_enabled_but_frame_not_split2",
-            )
+        emit_simple(
+            ctx.diag,
+            run_id=ctx.run_id,
+            stage="build",
+            component="back",
+            code="BACK_BUILD_DEBUG",
+            severity=Severity.INFO,
+            path="back_support.center_post",
+            source="computed",
+            input_value={"enabled": center_post_enabled, "frame_layout": frame_layout},
+            resolved_value="split_2_expected",
+            reason="center_post_enabled_but_frame_not_split2",
         )
 
     return BackBuildResult(

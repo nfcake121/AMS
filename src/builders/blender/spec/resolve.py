@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.builders.blender.diagnostics import Severity, make_event
+from src.builders.blender.diagnostics import Severity, emit_simple
 from src.builders.blender.spec.catalog import default_preset_id, get_preset
 from src.builders.blender.spec.types import (
     ArmsSpec,
@@ -49,19 +49,18 @@ def _warn(
     component: str = "resolver",
     meta: dict | None = None,
 ) -> None:
-    diagnostics.warnings.append(
-        make_event(
-            stage="resolve",
-            component=component,
-            code=code,
-            severity=severity,
-            path=path,
-            source=source,
-            input_value=old,
-            resolved_value=new,
-            reason=message,
-            meta=meta or {},
-        )
+    emit_simple(
+        diagnostics,
+        stage="resolve",
+        component=component,
+        code=code,
+        severity=severity,
+        path=path,
+        source=source,
+        input_value=old,
+        resolved_value=new,
+        reason=message,
+        meta=meta or {},
     )
 
 

@@ -80,19 +80,37 @@ def make_event(
 ) -> Event:
     if not ts:
         ts = utc_now_iso()
-    stage_value = str(stage).strip().lower() if isinstance(stage, str) else ""
-    if stage_value not in VALID_STAGES:
-        stage_value = DEFAULT_STAGE
-    component_value = str(component).strip().lower() if isinstance(component, str) else ""
-    if component_value not in VALID_COMPONENTS:
-        component_value = DEFAULT_COMPONENT
-    source_value = str(source).strip().lower() if isinstance(source, str) else ""
-    if source_value not in VALID_SOURCES:
-        source_value = DEFAULT_SOURCE
+    stage_value_raw = stage
+    stage_candidate = str(stage).strip().lower() if isinstance(stage, str) else ""
+    stage_value = stage_candidate if stage_candidate in VALID_STAGES else DEFAULT_STAGE
+    component_value_raw = component
+    component_candidate = str(component).strip().lower() if isinstance(component, str) else ""
+    component_value = component_candidate if component_candidate in VALID_COMPONENTS else DEFAULT_COMPONENT
+    source_value_raw = source
+    source_candidate = str(source).strip().lower() if isinstance(source, str) else ""
+    source_value = source_candidate if source_candidate in VALID_SOURCES else DEFAULT_SOURCE
     try:
         severity_value = int(severity)
     except (TypeError, ValueError):
         severity_value = int(Severity.INFO)
+    meta_value = dict(meta) if isinstance(meta, dict) else {}
+    normalized_from: dict[str, Any] = {}
+    if stage_value != stage_candidate:
+        normalized_from["stage"] = stage_value_raw
+    if component_value != component_candidate:
+        normalized_from["component"] = component_value_raw
+    if source_value != source_candidate:
+        normalized_from["source"] = source_value_raw
+    if normalized_from:
+        existing_normalized = meta_value.get("normalized_from")
+        if isinstance(existing_normalized, dict):
+            merged_normalized = dict(normalized_from)
+            merged_normalized.update(existing_normalized)
+            meta_value["normalized_from"] = merged_normalized
+        else:
+            meta_value["normalized_from"] = normalized_from
+        if not reason:
+            reason = "normalized diagnostics vocabulary"
     return Event(
         ts=ts,
         run_id=run_id,
@@ -105,7 +123,7 @@ def make_event(
         input_value=input_value,
         resolved_value=resolved_value,
         reason=reason,
-        meta=dict(meta) if isinstance(meta, dict) else {},
+        meta=meta_value,
     )
 
 
@@ -126,8 +144,11 @@ def emit_simple(
     resolved_value: Any = None,
     meta: dict[str, Any] | None = None,
     ts: str = "",
+    **extra_meta: Any,
 ) -> Event:
     merged_meta = dict(meta) if isinstance(meta, dict) else {}
+    if extra_meta:
+        merged_meta.update(extra_meta)
     if payload is not None and "payload" not in merged_meta:
         merged_meta["payload"] = payload
     if iter_index is not None:

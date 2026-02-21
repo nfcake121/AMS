@@ -123,6 +123,7 @@ def test_emit_simple_contract_and_normalization() -> None:
         input_value=-10,
         resolved_value=0.0,
         meta={"hint": "clamp"},
+        strategy="frame_box_open",
     )
     assert sink.events and sink.events[-1] is event
     event_payload = event.to_dict()
@@ -132,6 +133,7 @@ def test_emit_simple_contract_and_normalization() -> None:
     assert event_payload["meta"]["iter_index"] == 2
     assert event_payload["meta"]["payload"] == {"min": 0, "max": 120}
     assert event_payload["meta"]["hint"] == "clamp"
+    assert event_payload["meta"]["strategy"] == "frame_box_open"
 
     normalized = emit_simple(
         sink,
@@ -143,3 +145,8 @@ def test_emit_simple_contract_and_normalization() -> None:
     assert normalized.stage == "build"
     assert normalized.component == "builder"
     assert normalized.source == "computed"
+    assert normalized.meta.get("normalized_from") == {
+        "stage": "unknown_stage",
+        "component": "unknown_component",
+        "source": "unknown_source",
+    }

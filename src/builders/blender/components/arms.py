@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import List
 
-from src.builders.blender.diagnostics import Severity, make_event
+from src.builders.blender.diagnostics import Severity, emit_simple
 from src.builders.blender.geom_utils import clamp, ir_value, primitives_union_bbox
 from src.builders.blender.plan_types import Anchor, Primitive
 from src.builders.blender.spec.types import ArmsInputs, BuildContext
@@ -38,30 +38,29 @@ def _log_arms_build(
     center_x = 0.5 * (arm_bbox["min"][0] + arm_bbox["max"][0])
     center_y = 0.5 * (arm_bbox["min"][1] + arm_bbox["max"][1])
     center_z = 0.5 * (arm_bbox["min"][2] + arm_bbox["max"][2])
-    ctx.diag.emit(
-        make_event(
-            run_id=ctx.run_id,
-            stage="build",
-            component="arms",
-            code="ARMS_BUILD",
-            severity=Severity.INFO,
-            path="arms",
-            source="computed",
-            reason="component geometry emitted",
-            meta={
-                "profile": profile,
-                "side": side,
-                "dims_mm": {
-                    "w": round(float(arms_width_mm), 6),
-                    "h": round(float(arm_height_mm_local), 6),
-                    "depth": round(float(arm_depth_mm_local), 6),
-                },
-                "pos_mm": [center_x, center_y, center_z],
-                "bbox_min": list(arm_bbox["min"]),
-                "bbox_max": list(arm_bbox["max"]),
-                "primitives": primitive_names,
+    emit_simple(
+        ctx.diag,
+        run_id=ctx.run_id,
+        stage="build",
+        component="arms",
+        code="ARMS_BUILD",
+        severity=Severity.INFO,
+        path="arms",
+        source="computed",
+        reason="component geometry emitted",
+        meta={
+            "profile": profile,
+            "side": side,
+            "dims_mm": {
+                "w": round(float(arms_width_mm), 6),
+                "h": round(float(arm_height_mm_local), 6),
+                "depth": round(float(arm_depth_mm_local), 6),
             },
-        )
+            "pos_mm": [center_x, center_y, center_z],
+            "bbox_min": list(arm_bbox["min"]),
+            "bbox_max": list(arm_bbox["max"]),
+            "primitives": primitive_names,
+        },
     )
 
 
@@ -267,35 +266,33 @@ def build_arms(plan, inputs: ArmsInputs, ctx: BuildContext) -> None:
     primitives_out: list = []
 
     if profile not in {"box", "frame_box_open"}:
-        ctx.diag.emit(
-            make_event(
-                run_id=ctx.run_id,
-                stage="build",
-                component="arms",
-                code="PROFILE_FALLBACK_TO_BOX",
-                severity=Severity.WARN,
-                path="arms.profile",
-                source="fallback",
-                input_value=profile,
-                resolved_value="box",
-                reason="unsupported profile",
-                meta={"allowed": ["box", "frame_box_open"]},
-            )
+        emit_simple(
+            ctx.diag,
+            run_id=ctx.run_id,
+            stage="build",
+            component="arms",
+            code="PROFILE_FALLBACK_TO_BOX",
+            severity=Severity.WARN,
+            path="arms.profile",
+            source="fallback",
+            input_value=profile,
+            resolved_value="box",
+            reason="unsupported profile",
+            meta={"allowed": ["box", "frame_box_open"]},
         )
         profile = "box"
-    ctx.diag.emit(
-            make_event(
-                run_id=ctx.run_id,
-                stage="build",
-                component="arms",
-                code="STRATEGY_SELECTED",
-                severity=Severity.INFO,
-                path="arms.profile",
-                source="computed",
-                resolved_value={"profile": profile, "arms_type": arms_type},
-                reason="dispatch arms build strategy",
-            )
-        )
+    emit_simple(
+        ctx.diag,
+        run_id=ctx.run_id,
+        stage="build",
+        component="arms",
+        code="STRATEGY_SELECTED",
+        severity=Severity.INFO,
+        path="arms.profile",
+        source="computed",
+        resolved_value={"profile": profile, "arms_type": arms_type},
+        reason="dispatch arms build strategy",
+    )
 
     if arms_type in {"both", "left"}:
         if profile == "frame_box_open":

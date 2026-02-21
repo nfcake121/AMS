@@ -95,6 +95,9 @@ class ResolvedSpec:
 class ResolveDiagnostics:
     warnings: list[Event] = field(default_factory=list)
 
+    def emit(self, event: Event) -> None:
+        self.warnings.append(event)
+
 
 @dataclass(frozen=True)
 class BuildContext:
