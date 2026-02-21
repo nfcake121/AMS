@@ -89,3 +89,15 @@ class ResolveDiagnostics:
 class BuildContext:
     run_id: str | None
     debug: bool
+
+
+@dataclass(frozen=True)
+class LayoutContext:
+    seat_total_width_mm: float
+    total_width_mm: float
+    seat_depth_mm: float
+    frame_thickness_mm: float
+    seat_support_top_z: float
+    base_frame_top_z: float
+    base_frame_center_z: float
+    back_y: float

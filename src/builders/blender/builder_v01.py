@@ -1,9 +1,11 @@
 """Generate a geometry plan and anchors for Blender builds."""
 
-import math
 import os
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
+
+from src.builders.blender.geom_utils import clamp as _clamp
+from src.builders.blender.geom_utils import ir_value as _ir_value
 
 
 @dataclass
@@ -33,15 +35,6 @@ class BuildPlan:
     primitives: List[Primitive] = field(default_factory=list)
     anchors: List[Anchor] = field(default_factory=list)
     metadata: Dict[str, str] = field(default_factory=dict)
-
-
-def _ir_value(ir: dict, key: str, default: float) -> float:
-    """Helper to fetch numeric values from IR with defaults."""
-    value = ir.get(key, default)
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return float(default)
 
 
 def _ir_bool(ir: dict, key: str, default: bool) -> bool:
@@ -78,81 +71,6 @@ def _arms_count(arms_type: str) -> int:
     return 0
 
 
-def _clamp(value: float, min_value: float, max_value: float) -> float:
-    return max(min_value, min(max_value, float(value)))
-
-
-def _primitive_bbox_world(primitive: Primitive) -> Dict[str, Tuple[float, float, float]]:
-    """Axis-aligned bbox for a primitive in world coordinates (plan space)."""
-    dx, dy, dz = primitive.dimensions_mm
-    cx, cy, cz = primitive.location_mm
-    half_x = float(dx) / 2.0
-    half_y = float(dy) / 2.0
-    half_z = float(dz) / 2.0
-    try:
-        rx_deg, ry_deg, rz_deg = primitive.rotation_deg
-    except (TypeError, ValueError):
-        rx_deg, ry_deg, rz_deg = (0.0, 0.0, 0.0)
-    if rx_deg == 0.0 and ry_deg == 0.0 and rz_deg == 0.0:
-        world_half_x = half_x
-        world_half_y = half_y
-        world_half_z = half_z
-    else:
-        rx = math.radians(float(rx_deg))
-        ry = math.radians(float(ry_deg))
-        rz = math.radians(float(rz_deg))
-        cxr, sxr = math.cos(rx), math.sin(rx)
-        cyr, syr = math.cos(ry), math.sin(ry)
-        czr, szr = math.cos(rz), math.sin(rz)
-
-        # Blender default Euler order is XYZ.
-        r00 = cyr * czr
-        r01 = -cyr * szr
-        r02 = syr
-        r10 = sxr * syr * czr + cxr * szr
-        r11 = -sxr * syr * szr + cxr * czr
-        r12 = -sxr * cyr
-        r20 = -cxr * syr * czr + sxr * szr
-        r21 = cxr * syr * szr + sxr * czr
-        r22 = cxr * cyr
-
-        world_half_x = abs(r00) * half_x + abs(r01) * half_y + abs(r02) * half_z
-        world_half_y = abs(r10) * half_x + abs(r11) * half_y + abs(r12) * half_z
-        world_half_z = abs(r20) * half_x + abs(r21) * half_y + abs(r22) * half_z
-    return {
-        "min": (cx - world_half_x, cy - world_half_y, cz - world_half_z),
-        "max": (cx + world_half_x, cy + world_half_y, cz + world_half_z),
-    }
-
-
-def _primitives_union_bbox(primitives: List[Primitive]) -> Dict[str, Tuple[float, float, float]]:
-    if not primitives:
-        return {
-            "min": (0.0, 0.0, 0.0),
-            "max": (0.0, 0.0, 0.0),
-        }
-    min_x = float("inf")
-    min_y = float("inf")
-    min_z = float("inf")
-    max_x = float("-inf")
-    max_y = float("-inf")
-    max_z = float("-inf")
-    for primitive in primitives:
-        bbox = _primitive_bbox_world(primitive)
-        bmin = bbox["min"]
-        bmax = bbox["max"]
-        min_x = min(min_x, bmin[0])
-        min_y = min(min_y, bmin[1])
-        min_z = min(min_z, bmin[2])
-        max_x = max(max_x, bmax[0])
-        max_y = max(max_y, bmax[1])
-        max_z = max(max_z, bmax[2])
-    return {
-        "min": (min_x, min_y, min_z),
-        "max": (max_x, max_y, max_z),
-    }
-
-
 def _debug_env_enabled() -> bool:
     falsey = {"", "0", "false", "off", "no", "none"}
     for key, value in os.environ.items():
@@ -177,11 +95,9 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
 
     frame = ir.get("frame", {}) if isinstance(ir.get("frame"), dict) else {}
     frame_thickness_mm = _ir_value(frame, "thickness_mm", 35.0)
-    back_height_mm = _ir_value(frame, "back_height_above_seat_mm", 420.0)
-    back_thickness_mm = _ir_value(frame, "back_thickness_mm", 90.0)
 
     from src.builders.blender.spec.resolve import resolve
-    from src.builders.blender.spec.types import BuildContext
+    from src.builders.blender.spec.types import BuildContext, LayoutContext
 
     resolved_spec, resolve_diagnostics = resolve(ir, preset_id=ir.get("preset_id"))
 
@@ -224,8 +140,6 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
     slat_rail_height_mm = _ir_value(slats, "rail_height_mm", frame_thickness_mm)
     slat_rail_width_mm = _ir_value(slats, "rail_width_mm", frame_thickness_mm)
     slat_rail_inset_y_mm = _ir_value(slats, "rail_inset_y_mm", slat_margin_y_mm)
-
-    back_spec = resolved_spec.back
 
     # Z placement stack: legs -> base frame -> seat support -> back frame -> arms.
     # Seat support top aligns to seat_height_mm.
@@ -385,9 +299,22 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
                 )
             )
 
-    from src.builders.blender.components.back import BackBuildHelpers, build_back
+    from src.builders.blender.components.back import build_back
 
-    build_ctx = BuildContext(run_id=None, debug=_debug_env_enabled())
+    build_ctx = BuildContext(
+        run_id=None,
+        debug=_debug_env_enabled(),
+    )
+    layout_ctx = LayoutContext(
+        seat_total_width_mm=seat_total_width_mm,
+        total_width_mm=total_width_mm,
+        seat_depth_mm=seat_depth_mm,
+        frame_thickness_mm=frame_thickness_mm,
+        seat_support_top_z=seat_support_top_z,
+        base_frame_top_z=base_frame_top_z,
+        base_frame_center_z=base_frame_center_z,
+        back_y=back_y,
+    )
     if build_ctx.debug:
         for warning in resolve_diagnostics.warnings:
             print(
@@ -399,22 +326,7 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
                 f"source={warning.get('source', '')}"
             )
 
-    back_result = build_back(
-        plan=plan,
-        spec=back_spec,
-        ctx=build_ctx,
-        ir=ir,
-        helpers=BackBuildHelpers(
-            seat_total_width_mm=seat_total_width_mm,
-            total_width_mm=total_width_mm,
-            seat_depth_mm=seat_depth_mm,
-            frame_thickness_mm=frame_thickness_mm,
-            seat_support_top_z=seat_support_top_z,
-            base_frame_top_z=base_frame_top_z,
-            base_frame_center_z=base_frame_center_z,
-            back_y=back_y,
-        ),
-    )
+    build_back(plan=plan, spec=resolved_spec, ctx=build_ctx, layout=layout_ctx)
 
     # Arms: delegated to component (thin seam).
     from src.builders.blender.components.arms import build_arms
@@ -449,36 +361,6 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
             )
         )
 
-    # Anchors for zones.
-    back_anchor_y = back_result.back_anchor_y
-    back_bottom_z = back_result.back_bottom_z
-    back_top_z = back_result.back_top_z
-    back_inner_center = back_result.back_inner_center
-    left_back_corner = (-(seat_total_width_mm / 2.0), back_anchor_y, back_bottom_z)
-    right_back_corner = ((seat_total_width_mm / 2.0), back_anchor_y, back_bottom_z)
-
-    plan.anchors.extend(
-        [
-            Anchor(name="seat_zone", location_mm=(0.0, 0.0, seat_support_center_z)),
-            Anchor(name="back_zone", location_mm=back_result.back_panel_center),
-            Anchor(name="seat_rear_rail", location_mm=back_result.seat_rear_rail_center),
-            Anchor(
-                name="seat_back_rail_center_y",
-                location_mm=(0.0, back_result.seat_back_rail_center_y, base_frame_center_z),
-            ),
-            Anchor(
-                name="seat_back_rail_outer_face_y",
-                location_mm=(0.0, back_result.seat_back_rail_outer_face_y, base_frame_center_z),
-            ),
-            Anchor(name="y_back_seat", location_mm=(0.0, back_result.y_back_seat, base_frame_center_z)),
-            Anchor(name="seat_back_plane", location_mm=(0.0, back_result.seat_back_rail_outer_face_y, back_bottom_z)),
-            Anchor(name="back_frame_origin", location_mm=back_result.back_frame_origin),
-            Anchor(name="back_bottom_edge_center", location_mm=(0.0, back_anchor_y, back_bottom_z)),
-            Anchor(name="back_top_edge_center", location_mm=(0.0, back_anchor_y, back_top_z)),
-            Anchor(name="back_inner_plane_center", location_mm=back_inner_center),
-            Anchor(name="left_back_corner", location_mm=left_back_corner),
-            Anchor(name="right_back_corner", location_mm=right_back_corner),
-        ]
-    )
+    plan.anchors.append(Anchor(name="seat_zone", location_mm=(0.0, 0.0, seat_support_center_z)))
 
     return plan

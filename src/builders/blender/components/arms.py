@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from typing import List, Tuple
+from typing import List
 
-from src.builders.blender import builder_v01 as builder
+from src.builders.blender.builder_v01 import Anchor, Primitive
+from src.builders.blender.geom_utils import clamp, ir_value, primitives_union_bbox
 from src.builders.blender.spec.types import BuildContext, ResolvedSpec
-
-Primitive = builder.Primitive
-Anchor = builder.Anchor
 
 
 def _canon_arms_type(value: str) -> str:
@@ -26,7 +24,7 @@ def _add_primitive(plan, primitive: Primitive, primitives_out: list) -> None:
 
 
 def _log_arms_build(side: str, profile: str, arms_width_mm: float, arm_primitives: List[Primitive], arm_depth_mm_local: float, arm_height_mm_local: float) -> None:
-    arm_bbox = builder._primitives_union_bbox(arm_primitives)
+    arm_bbox = primitives_union_bbox(arm_primitives)
     primitive_names = ",".join(p.name for p in arm_primitives)
     center_x = 0.5 * (arm_bbox["min"][0] + arm_bbox["max"][0])
     center_y = 0.5 * (arm_bbox["min"][1] + arm_bbox["max"][1])
@@ -64,8 +62,8 @@ def build_arm_frame_open(plan, side: str, arms_width_mm: float, seat_total_width
     arms = ir.get("arms", {}) if isinstance(ir.get("arms"), dict) else {}
     back_support_for_arms = ir.get("back_support", {}) if isinstance(ir.get("back_support"), dict) else {}
 
-    arm_back_height_source = builder._ir_value(back_support_for_arms, "height_above_seat_mm", back_height_mm)
-    arm_height_mm = max(1.0, builder._ir_value(arms, "height_mm", seat_height_mm + (arm_back_height_source * 0.35)))
+    arm_back_height_source = ir_value(back_support_for_arms, "height_above_seat_mm", back_height_mm)
+    arm_height_mm = max(1.0, ir_value(arms, "height_mm", seat_height_mm + (arm_back_height_source * 0.35)))
 
     arm_length_y_mode_raw = arms.get("length_y_mode", "match_seat")
     if isinstance(arm_length_y_mode_raw, str):
@@ -75,14 +73,14 @@ def build_arm_frame_open(plan, side: str, arms_width_mm: float, seat_total_width
     if arm_length_y_mode not in {"match_seat", "custom"}:
         arm_length_y_mode = "match_seat"
 
-    arm_length_y_custom_mm = max(1.0, builder._ir_value(arms, "length_y_mm", seat_depth_mm))
-    arm_inset_y_front_mm = max(0.0, builder._ir_value(arms, "inset_y_front_mm", 25.0))
-    arm_inset_y_back_mm = max(0.0, builder._ir_value(arms, "inset_y_back_mm", 10.0))
-    arm_clearance_to_seat_mm = builder._clamp(builder._ir_value(arms, "clearance_to_seat_mm", 2.0), 0.0, 30.0)
-    arm_thickness_mm = builder._clamp(builder._ir_value(arms, "thickness_mm", frame_thickness_mm), 18.0, 30.0)
-    arm_inner_clearance_mm = builder._clamp(builder._ir_value(arms, "inner_clearance_mm", 8.0), 6.0, 12.0)
-    arm_cap_overhang_mm = builder._clamp(builder._ir_value(arms, "cap_overhang_mm", builder._ir_value(arms, "top_overhang_mm", 8.0)), 5.0, 15.0)
-    arm_outer_rail_width_mm = builder._clamp(builder._ir_value(arms, "outer_rail_width_mm", 56.0), 40.0, 80.0)
+    arm_length_y_custom_mm = max(1.0, ir_value(arms, "length_y_mm", seat_depth_mm))
+    arm_inset_y_front_mm = max(0.0, ir_value(arms, "inset_y_front_mm", 25.0))
+    arm_inset_y_back_mm = max(0.0, ir_value(arms, "inset_y_back_mm", 10.0))
+    arm_clearance_to_seat_mm = clamp(ir_value(arms, "clearance_to_seat_mm", 2.0), 0.0, 30.0)
+    arm_thickness_mm = clamp(ir_value(arms, "thickness_mm", frame_thickness_mm), 18.0, 30.0)
+    arm_inner_clearance_mm = clamp(ir_value(arms, "inner_clearance_mm", 8.0), 6.0, 12.0)
+    arm_cap_overhang_mm = clamp(ir_value(arms, "cap_overhang_mm", ir_value(arms, "top_overhang_mm", 8.0)), 5.0, 15.0)
+    arm_outer_rail_width_mm = clamp(ir_value(arms, "outer_rail_width_mm", 56.0), 40.0, 80.0)
 
     seat_support_top_z = seat_height_mm
     base_frame_top_z = seat_support_top_z - frame_thickness_mm
@@ -111,7 +109,7 @@ def build_arm_frame_open(plan, side: str, arms_width_mm: float, seat_total_width
     frame_min_y = frame_center_y - (arm_span_y / 2.0)
     frame_max_y = frame_center_y + (arm_span_y / 2.0)
 
-    y_clearance_mm = builder._clamp(arm_clearance_to_seat_mm, 2.0, 5.0)
+    y_clearance_mm = clamp(arm_clearance_to_seat_mm, 2.0, 5.0)
     frame_min_y += (y_clearance_mm / 2.0)
     frame_max_y -= (y_clearance_mm / 2.0)
     if frame_max_y <= frame_min_y:
@@ -125,10 +123,10 @@ def build_arm_frame_open(plan, side: str, arms_width_mm: float, seat_total_width
     arm_top_z = max(arm_bottom_z + (2.0 * arm_thickness_mm), arm_height_mm)
     arm_span_z = max(1.0, arm_top_z - arm_bottom_z)
 
-    post_thickness_x = builder._clamp(arm_thickness_mm, 12.0, max(12.0, arms_width_mm - 6.0))
-    post_depth_y = builder._clamp(arm_thickness_mm, 12.0, max(12.0, arm_span_y * 0.45))
-    cap_thickness_z = builder._clamp(arm_thickness_mm, 12.0, max(12.0, arm_span_z * 0.45))
-    top_rail_thickness_z = builder._clamp(arm_thickness_mm, 12.0, max(12.0, arm_span_z * 0.35))
+    post_thickness_x = clamp(arm_thickness_mm, 12.0, max(12.0, arms_width_mm - 6.0))
+    post_depth_y = clamp(arm_thickness_mm, 12.0, max(12.0, arm_span_y * 0.45))
+    cap_thickness_z = clamp(arm_thickness_mm, 12.0, max(12.0, arm_span_z * 0.45))
+    top_rail_thickness_z = clamp(arm_thickness_mm, 12.0, max(12.0, arm_span_z * 0.35))
 
     structure_top_z = arm_top_z - cap_thickness_z
     structure_span_z = max(1.0, structure_top_z - arm_bottom_z)
@@ -138,7 +136,7 @@ def build_arm_frame_open(plan, side: str, arms_width_mm: float, seat_total_width
 
     inner_dist_min = (post_thickness_x / 2.0) + 1.0
     inner_dist_max = max(inner_dist_min, arms_width_mm - (post_thickness_x / 2.0) - 1.0)
-    inner_post_center_dist = builder._clamp(
+    inner_post_center_dist = clamp(
         arm_inner_clearance_mm + (post_thickness_x / 2.0),
         inner_dist_min,
         inner_dist_max,
@@ -147,7 +145,7 @@ def build_arm_frame_open(plan, side: str, arms_width_mm: float, seat_total_width
 
     back_dist_min = inner_post_center_dist + (post_thickness_x * 0.5)
     back_dist_max = max(back_dist_min, arms_width_mm - (post_thickness_x / 2.0) - 1.0)
-    back_post_center_dist = builder._clamp(
+    back_post_center_dist = clamp(
         arms_width_mm - (post_thickness_x / 2.0) - 1.0,
         back_dist_min,
         back_dist_max,
@@ -229,15 +227,15 @@ def build_arm_frame_open(plan, side: str, arms_width_mm: float, seat_total_width
 
 def build_arms(plan, spec: ResolvedSpec, ctx: BuildContext, ir: dict, primitives_out: list) -> None:
     del ctx
-    seat_width_mm = builder._ir_value(ir, "seat_width_mm", 600.0)
-    seat_depth_mm = builder._ir_value(ir, "seat_depth_mm", 600.0)
-    seat_height_mm = builder._ir_value(ir, "seat_height_mm", 440.0)
-    seat_count = max(1, int(builder._ir_value(ir, "seat_count", 3)))
+    seat_width_mm = ir_value(ir, "seat_width_mm", 600.0)
+    seat_depth_mm = ir_value(ir, "seat_depth_mm", 600.0)
+    seat_height_mm = ir_value(ir, "seat_height_mm", 440.0)
+    seat_count = max(1, int(ir_value(ir, "seat_count", 3)))
     seat_total_width_mm = seat_width_mm * seat_count
 
     frame = ir.get("frame", {}) if isinstance(ir.get("frame"), dict) else {}
-    frame_thickness_mm = builder._ir_value(frame, "thickness_mm", 35.0)
-    back_height_mm = builder._ir_value(frame, "back_height_above_seat_mm", 420.0)
+    frame_thickness_mm = ir_value(frame, "thickness_mm", 35.0)
+    back_height_mm = ir_value(frame, "back_height_above_seat_mm", 420.0)
 
     arms_type = _canon_arms_type(spec.arms.type)
     arms_width_mm = max(0.0, float(spec.arms.width_mm))

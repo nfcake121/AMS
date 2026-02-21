@@ -5,11 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Tuple
 
-from src.builders.blender import builder_v01 as builder
-from src.builders.blender.spec.types import BackSpec, BuildContext
-
-Primitive = builder.Primitive
-Anchor = builder.Anchor
+from src.builders.blender.builder_v01 import Anchor, Primitive
+from src.builders.blender.geom_utils import clamp, primitive_bbox_world
+from src.builders.blender.spec.types import BackSpec, BuildContext, LayoutContext, ResolvedSpec
 
 
 @dataclass(frozen=True)
@@ -302,9 +300,7 @@ def build_back_vertical_slats(
     return back_slats_bbox_inner_text
 
 
-def build_back(plan, spec: BackSpec, ctx: BuildContext, ir: dict, helpers: BackBuildHelpers) -> BackBuildResult:
-    del ir
-
+def _build_back_from_spec(plan, spec: BackSpec, ctx: BuildContext, helpers: BackBuildHelpers) -> BackBuildResult:
     has_back_support = bool(spec.has_back_support)
     back_support_mode = str(spec.mode or "panel")
 
@@ -350,7 +346,7 @@ def build_back(plan, spec: BackSpec, ctx: BuildContext, ir: dict, helpers: BackB
     base_frame_center_z = helpers.base_frame_center_z
 
     # Back support uses a frame tied directly to the rear seat rail.
-    back_offset_y_micro_mm = builder._clamp(back_offset_y_mm, -80.0, 80.0)
+    back_offset_y_micro_mm = clamp(back_offset_y_mm, -80.0, 80.0)
     seat_back_rail_center_y = back_y
     seat_back_rail_outer_face_y = seat_back_rail_center_y - (frame_thickness_mm / 2.0)
     y_back_seat = seat_back_rail_outer_face_y
@@ -593,13 +589,13 @@ def build_back(plan, spec: BackSpec, ctx: BuildContext, ir: dict, helpers: BackB
         print(f"BACK_SLATS bbox_inner={back_slats_bbox_inner_text}")
         print(f"[builder_v01] back_frame back_frame_origin={back_frame_origin}")
         for primitive in back_frame_debug_primitives:
-            bbox = builder._primitive_bbox_world(primitive)
+            bbox = primitive_bbox_world(primitive)
             print(
                 "[builder_v01] back_frame "
                 f"{primitive.name} bbox_world.min={bbox['min']} bbox_world.max={bbox['max']}"
             )
         for primitive in back_slat_debug_primitives:
-            bbox = builder._primitive_bbox_world(primitive)
+            bbox = primitive_bbox_world(primitive)
             print(
                 "[builder_v01] back_frame "
                 f"{primitive.name} bbox_world.min={bbox['min']} bbox_world.max={bbox['max']}"
@@ -632,3 +628,57 @@ def build_back(plan, spec: BackSpec, ctx: BuildContext, ir: dict, helpers: BackB
         back_top_z=back_top_z,
         back_inner_center=back_inner_center,
     )
+
+
+def _coerce_back_helpers(layout: LayoutContext) -> BackBuildHelpers:
+    return BackBuildHelpers(
+        seat_total_width_mm=float(layout.seat_total_width_mm),
+        total_width_mm=float(layout.total_width_mm),
+        seat_depth_mm=float(layout.seat_depth_mm),
+        frame_thickness_mm=float(layout.frame_thickness_mm),
+        seat_support_top_z=float(layout.seat_support_top_z),
+        base_frame_top_z=float(layout.base_frame_top_z),
+        base_frame_center_z=float(layout.base_frame_center_z),
+        back_y=float(layout.back_y),
+    )
+
+
+def _append_back_zone_anchors(plan, back_result: BackBuildResult, helpers: BackBuildHelpers) -> None:
+    seat_total_width_mm = helpers.seat_total_width_mm
+    base_frame_center_z = helpers.base_frame_center_z
+
+    back_anchor_y = back_result.back_anchor_y
+    back_bottom_z = back_result.back_bottom_z
+    back_top_z = back_result.back_top_z
+    back_inner_center = back_result.back_inner_center
+    left_back_corner = (-(seat_total_width_mm / 2.0), back_anchor_y, back_bottom_z)
+    right_back_corner = ((seat_total_width_mm / 2.0), back_anchor_y, back_bottom_z)
+
+    plan.anchors.extend(
+        [
+            Anchor(name="back_zone", location_mm=back_result.back_panel_center),
+            Anchor(name="seat_rear_rail", location_mm=back_result.seat_rear_rail_center),
+            Anchor(
+                name="seat_back_rail_center_y",
+                location_mm=(0.0, back_result.seat_back_rail_center_y, base_frame_center_z),
+            ),
+            Anchor(
+                name="seat_back_rail_outer_face_y",
+                location_mm=(0.0, back_result.seat_back_rail_outer_face_y, base_frame_center_z),
+            ),
+            Anchor(name="y_back_seat", location_mm=(0.0, back_result.y_back_seat, base_frame_center_z)),
+            Anchor(name="seat_back_plane", location_mm=(0.0, back_result.seat_back_rail_outer_face_y, back_bottom_z)),
+            Anchor(name="back_frame_origin", location_mm=back_result.back_frame_origin),
+            Anchor(name="back_bottom_edge_center", location_mm=(0.0, back_anchor_y, back_bottom_z)),
+            Anchor(name="back_top_edge_center", location_mm=(0.0, back_anchor_y, back_top_z)),
+            Anchor(name="back_inner_plane_center", location_mm=back_inner_center),
+            Anchor(name="left_back_corner", location_mm=left_back_corner),
+            Anchor(name="right_back_corner", location_mm=right_back_corner),
+        ]
+    )
+
+
+def build_back(plan, spec: ResolvedSpec, ctx: BuildContext, layout: LayoutContext) -> None:
+    helpers = _coerce_back_helpers(layout)
+    back_result = _build_back_from_spec(plan=plan, spec=spec.back, ctx=ctx, helpers=helpers)
+    _append_back_zone_anchors(plan=plan, back_result=back_result, helpers=helpers)

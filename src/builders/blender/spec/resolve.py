@@ -99,7 +99,7 @@ def _clamp_non_negative(
     if value < 0.0:
         _warn(
             diagnostics,
-            code="BACK_CLAMPED",
+            code="BACK_CLAMP",
             message=f"{path} clamped to 0.0",
             path=path,
             old=value,
@@ -120,7 +120,7 @@ def _clamp_range(
     if clamped != float(value):
         _warn(
             diagnostics,
-            code="BACK_CLAMPED",
+            code="BACK_CLAMP",
             message=f"{path} clamped to [{min_value}, {max_value}]",
             path=path,
             old=value,
@@ -175,7 +175,7 @@ def _canonical_choice(
         if value:
             _warn(
                 diagnostics,
-                code="BACK_PROFILE_FALLBACK",
+                code="BACK_FALLBACK",
                 message=f"unsupported {path} fallback to {fallback}",
                 path=path,
                 old=value_raw,
@@ -184,13 +184,13 @@ def _canonical_choice(
     return fallback
 
 
-def _resolve_back_spec(ir: dict, preset: dict, diagnostics: ResolveDiagnostics) -> BackSpec:
+def resolve_back_spec(ir: dict, preset: dict, diagnostics: ResolveDiagnostics) -> BackSpec:
     has_back_support = "back_support" in ir
     back_support_raw = ir.get("back_support")
     if has_back_support and not isinstance(back_support_raw, dict):
         _warn(
             diagnostics,
-            code="BACK_PROFILE_FALLBACK",
+            code="BACK_FALLBACK",
             message="back_support must be an object; fallback to defaults",
             path="back_support",
             old=type(back_support_raw).__name__,
@@ -404,7 +404,7 @@ def _resolve_back_spec(ir: dict, preset: dict, diagnostics: ResolveDiagnostics) 
         if layout_normalized not in _BACK_FRAME_LAYOUT_ALIASES:
             _warn(
                 diagnostics,
-                code="BACK_PROFILE_FALLBACK",
+                code="BACK_FALLBACK",
                 message="unsupported back_support.frame_layout fallback to single",
                 path="back_support.frame_layout",
                 old=frame_layout_raw,
@@ -441,7 +441,7 @@ def _resolve_back_spec(ir: dict, preset: dict, diagnostics: ResolveDiagnostics) 
     if slat_count != _as_int(slat_count_raw, 10):
         _warn(
             diagnostics,
-            code="BACK_CLAMPED",
+            code="BACK_CLAMP",
             message="back_support.slats.count clamped to >= 0",
             path="back_support.slats.count",
             old=slat_count_raw,
@@ -479,7 +479,7 @@ def _resolve_back_spec(ir: dict, preset: dict, diagnostics: ResolveDiagnostics) 
     if strap_count != _as_int(strap_count_raw, 6):
         _warn(
             diagnostics,
-            code="BACK_CLAMPED",
+            code="BACK_CLAMP",
             message="back_support.straps.count clamped to >= 0",
             path="back_support.straps.count",
             old=strap_count_raw,
@@ -568,7 +568,9 @@ def resolve(ir: dict, preset_id: str | None = None) -> tuple[ResolvedSpec, Resol
 
     arms = ir.get("arms", {}) if isinstance(ir.get("arms"), dict) else {}
 
-    arms_type_raw = arms.get("type", preset_arms.get("type", "none"))
+    arms_type_raw = arms.get("type") if "type" in arms else preset_arms.get("type")
+    if arms_type_raw is None:
+        arms_type_raw = "none"
     arms_type = _canon_arms_type(arms_type_raw)
 
     width_raw = arms.get("width_mm", preset_arms.get("width_mm", 120.0))
@@ -597,7 +599,7 @@ def resolve(ir: dict, preset_id: str | None = None) -> tuple[ResolvedSpec, Resol
             new="box",
         )
 
-    back_spec = _resolve_back_spec(ir=ir, preset=preset, diagnostics=diagnostics)
+    back_spec = resolve_back_spec(ir=ir, preset=preset, diagnostics=diagnostics)
 
     resolved = ResolvedSpec(
         style=style,

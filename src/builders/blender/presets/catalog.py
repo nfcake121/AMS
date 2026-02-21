@@ -7,7 +7,6 @@ from copy import deepcopy
 
 _GLOBAL_DEFAULTS = {
     "arms": {
-        "type": "none",
         "width_mm": 120.0,
         "profile": "box",
     },
@@ -56,12 +55,6 @@ _GLOBAL_DEFAULTS = {
 _STYLE_PRESETS = {
     "scandi": {
         "scandi_straight_v1": {
-            "arms": {
-                # Keep v01 behavior unchanged on step-1 migration.
-                "type": "none",
-                "width_mm": 120.0,
-                "profile": "box",
-            },
             "back": {
                 "mode": "slats",
                 "frame": {
