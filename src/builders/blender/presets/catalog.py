@@ -110,6 +110,53 @@ _STYLE_DEFINITIONS: dict[str, StyleDefinition] = {
             )
         },
     ),
+    "modern": StyleDefinition(
+        default_preset_id="modern_boxy_v1",
+        presets={
+            "modern_boxy_v1": PresetDefinition(
+                base={
+                    "arms": {
+                        "profile": "box",
+                        "width_mm": 105.0,
+                    },
+                    "legs": {
+                        "family": "block",
+                        "height_mm": 150.0,
+                    },
+                    "back": {
+                        "mode": "panel",
+                        "frame": {
+                            "margin_x_mm": 30.0,
+                            "margin_z_mm": 24.0,
+                            "frame_layout": "single",
+                            "split_center": False,
+                        },
+                    },
+                }
+            ),
+            "modern_boxy_compact_v1": PresetDefinition(
+                base={
+                    "arms": {
+                        "profile": "box",
+                        "width_mm": 95.0,
+                    },
+                    "legs": {
+                        "family": "block",
+                        "height_mm": 140.0,
+                    },
+                    "back": {
+                        "mode": "panel",
+                        "frame": {
+                            "margin_x_mm": 24.0,
+                            "margin_z_mm": 20.0,
+                            "frame_layout": "single",
+                            "split_center": False,
+                        },
+                    },
+                }
+            ),
+        },
+    ),
 }
 
 

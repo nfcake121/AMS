@@ -57,3 +57,9 @@ def test_unknown_variant_id_is_noop():
     baseline = get_preset("scandi", "scandi_straight_v1")
     with_unknown_variant = get_preset("scandi", "scandi_straight_v1", variant_id="missing_variant")
     assert with_unknown_variant == baseline
+
+
+def test_modern_style_default_preset_is_available():
+    preset = get_preset("modern", "")
+    assert preset["arms"]["profile"] == "box"
+    assert preset["back"]["mode"] == "panel"
