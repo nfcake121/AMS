@@ -27,6 +27,15 @@ SEVERITY_MIN = int(Severity.INFO)
 SEVERITY_MAX = int(Severity.FATAL)
 VALID_SEVERITIES = frozenset(SEVERITY_LABELS.keys())
 
+VALID_STAGES = frozenset({"resolve", "layout", "build", "debug"})
+VALID_SOURCES = frozenset({"ir", "preset", "global", "fallback", "computed"})
+VALID_COMPONENTS = frozenset(
+    {"resolver", "layout", "seat_frame", "seat_slats", "back", "arms", "legs", "builder"}
+)
+DEFAULT_STAGE = "build"
+DEFAULT_SOURCE = "computed"
+DEFAULT_COMPONENT = "builder"
+
 
 def utc_now_iso() -> str:
     """Return UTC timestamp in stable ISO-8601 format."""
@@ -71,6 +80,15 @@ def make_event(
 ) -> Event:
     if not ts:
         ts = utc_now_iso()
+    stage_value = str(stage).strip().lower() if isinstance(stage, str) else ""
+    if stage_value not in VALID_STAGES:
+        stage_value = DEFAULT_STAGE
+    component_value = str(component).strip().lower() if isinstance(component, str) else ""
+    if component_value not in VALID_COMPONENTS:
+        component_value = DEFAULT_COMPONENT
+    source_value = str(source).strip().lower() if isinstance(source, str) else ""
+    if source_value not in VALID_SOURCES:
+        source_value = DEFAULT_SOURCE
     try:
         severity_value = int(severity)
     except (TypeError, ValueError):
@@ -78,17 +96,58 @@ def make_event(
     return Event(
         ts=ts,
         run_id=run_id,
-        stage=stage,
-        component=component,
+        stage=stage_value,
+        component=component_value,
         code=code,
         severity=max(SEVERITY_MIN, min(SEVERITY_MAX, severity_value)),
         path=path,
-        source=source,
+        source=source_value,
         input_value=input_value,
         resolved_value=resolved_value,
         reason=reason,
         meta=dict(meta) if isinstance(meta, dict) else {},
     )
+
+
+def emit_simple(
+    sink: DiagnosticsSink,
+    *,
+    code: str,
+    path: str = "",
+    payload: Any = None,
+    severity: int = Severity.INFO,
+    component: str = DEFAULT_COMPONENT,
+    stage: str = DEFAULT_STAGE,
+    iter_index: int | None = None,
+    source: str = DEFAULT_SOURCE,
+    reason: str = "",
+    run_id: str = "",
+    input_value: Any = None,
+    resolved_value: Any = None,
+    meta: dict[str, Any] | None = None,
+    ts: str = "",
+) -> Event:
+    merged_meta = dict(meta) if isinstance(meta, dict) else {}
+    if payload is not None and "payload" not in merged_meta:
+        merged_meta["payload"] = payload
+    if iter_index is not None:
+        merged_meta["iter_index"] = int(iter_index)
+    event = make_event(
+        ts=ts,
+        run_id=run_id,
+        stage=stage,
+        component=component,
+        code=code,
+        severity=severity,
+        path=path,
+        source=source,
+        input_value=input_value,
+        resolved_value=resolved_value,
+        reason=reason,
+        meta=merged_meta,
+    )
+    sink.emit(event)
+    return event
 
 
 class DiagnosticsSink(Protocol):
