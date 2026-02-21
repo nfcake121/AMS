@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
+from src.builders.blender.diagnostics import Severity, emit_simple
 from src.builders.blender.plan_types import Anchor, Primitive
 from src.builders.blender.spec.types import BuildContext, SeatSlatsInputs
 
 
-def build_seat_slats(plan, inputs: SeatSlatsInputs, ctx: BuildContext) -> None:
-    del ctx
+def select_seat_slats_strategy(inputs: SeatSlatsInputs) -> str:
+    del inputs
+    return "default"
+
+
+def _build_seat_slats_default(plan, inputs: SeatSlatsInputs) -> None:
     if not inputs.slats_enabled:
         return
 
@@ -86,3 +93,29 @@ def build_seat_slats(plan, inputs: SeatSlatsInputs, ctx: BuildContext) -> None:
                 },
             )
         )
+
+
+SEAT_SLATS_STRATEGIES: dict[str, Callable] = {
+    "default": _build_seat_slats_default,
+}
+
+
+def build_seat_slats(plan, inputs: SeatSlatsInputs, ctx: BuildContext) -> None:
+    strategy_id = select_seat_slats_strategy(inputs)
+    strategy = SEAT_SLATS_STRATEGIES.get(strategy_id, SEAT_SLATS_STRATEGIES["default"])
+    emit_simple(
+        ctx.diag,
+        run_id=ctx.run_id,
+        stage="build",
+        component="seat_slats",
+        code="STRATEGY_SELECTED",
+        severity=Severity.INFO,
+        path="seat_slats.strategy",
+        source="computed",
+        reason="seat slats strategy selected",
+        payload={
+            "strategy": strategy_id,
+            "handler": strategy.__name__.removeprefix("_build_seat_slats_"),
+        },
+    )
+    strategy(plan, inputs)

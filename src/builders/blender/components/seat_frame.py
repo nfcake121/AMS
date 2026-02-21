@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
+from src.builders.blender.diagnostics import Severity, emit_simple
 from src.builders.blender.plan_types import Primitive
 from src.builders.blender.spec.types import BuildContext, SeatFrameInputs
 
 
-def build_seat_frame(plan, inputs: SeatFrameInputs, ctx: BuildContext) -> None:
-    del ctx
+def select_seat_frame_strategy(inputs: SeatFrameInputs) -> str:
+    del inputs
+    return "default"
 
+
+def _build_seat_frame_default(plan, inputs: SeatFrameInputs) -> None:
     front_y = (inputs.seat_depth_mm / 2.0) - (inputs.frame_thickness_mm / 2.0)
     back_y = -(inputs.seat_depth_mm / 2.0) + (inputs.frame_thickness_mm / 2.0)
     left_x = -(inputs.total_width_mm / 2.0) + (inputs.frame_thickness_mm / 2.0)
@@ -70,3 +76,29 @@ def build_seat_frame(plan, inputs: SeatFrameInputs, ctx: BuildContext) -> None:
                 location_mm=(0.0, 0.0, inputs.seat_support_center_z),
             )
         )
+
+
+SEAT_FRAME_STRATEGIES: dict[str, Callable] = {
+    "default": _build_seat_frame_default,
+}
+
+
+def build_seat_frame(plan, inputs: SeatFrameInputs, ctx: BuildContext) -> None:
+    strategy_id = select_seat_frame_strategy(inputs)
+    strategy = SEAT_FRAME_STRATEGIES.get(strategy_id, SEAT_FRAME_STRATEGIES["default"])
+    emit_simple(
+        ctx.diag,
+        run_id=ctx.run_id,
+        stage="build",
+        component="seat_frame",
+        code="STRATEGY_SELECTED",
+        severity=Severity.INFO,
+        path="seat_frame.strategy",
+        source="computed",
+        reason="seat frame strategy selected",
+        payload={
+            "strategy": strategy_id,
+            "handler": strategy.__name__.removeprefix("_build_seat_frame_"),
+        },
+    )
+    strategy(plan, inputs)

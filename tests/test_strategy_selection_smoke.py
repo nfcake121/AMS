@@ -29,7 +29,7 @@ class ListDiagnosticsSink:
         self.events.append(event)
 
 
-def _expected_strategy_handlers(ir: dict) -> tuple[str, str, str]:
+def _expected_strategy_handlers(ir: dict) -> tuple[str, str, str, str, str]:
     resolved, _ = resolve(ir, preset_id=ir.get("preset_id"))
 
     arms_profile = str(resolved.arms.profile or "box")
@@ -62,7 +62,10 @@ def _expected_strategy_handlers(ir: dict) -> tuple[str, str, str]:
     else:
         legs_handler = "leg_passthrough"
 
-    return back_handler, arms_handler, legs_handler
+    seat_frame_handler = "default"
+    seat_slats_handler = "default"
+
+    return back_handler, arms_handler, legs_handler, seat_frame_handler, seat_slats_handler
 
 
 def test_strategy_selection_smoke(monkeypatch):
@@ -70,7 +73,13 @@ def test_strategy_selection_smoke(monkeypatch):
 
     for case in CASES:
         ir = json.loads(Path(case).read_text(encoding="utf-8"))
-        expected_back_handler, expected_arms_handler, expected_legs_handler = _expected_strategy_handlers(ir)
+        (
+            expected_back_handler,
+            expected_arms_handler,
+            expected_legs_handler,
+            expected_seat_frame_handler,
+            expected_seat_slats_handler,
+        ) = _expected_strategy_handlers(ir)
 
         sink = ListDiagnosticsSink()
         monkeypatch.setattr(builder_mod, "_diag_sink_from_env", lambda: sink)
@@ -90,13 +99,19 @@ def test_strategy_selection_smoke(monkeypatch):
         back_events = [event for event in strategy_events if event.component == "back"]
         arms_events = [event for event in strategy_events if event.component == "arms"]
         legs_events = [event for event in strategy_events if event.component == "legs"]
+        seat_frame_events = [event for event in strategy_events if event.component == "seat_frame"]
+        seat_slats_events = [event for event in strategy_events if event.component == "seat_slats"]
         assert back_events, f"Missing back strategy event for {case}"
         assert arms_events, f"Missing arms strategy event for {case}"
         assert legs_events, f"Missing legs strategy event for {case}"
+        assert seat_frame_events, f"Missing seat_frame strategy event for {case}"
+        assert seat_slats_events, f"Missing seat_slats strategy event for {case}"
 
         back_handler = back_events[-1].meta.get("payload", {}).get("handler")
         arms_handler = arms_events[-1].meta.get("payload", {}).get("handler")
         legs_handler = legs_events[-1].meta.get("payload", {}).get("handler")
+        seat_frame_handler = seat_frame_events[-1].meta.get("payload", {}).get("handler")
+        seat_slats_handler = seat_slats_events[-1].meta.get("payload", {}).get("handler")
         assert back_handler == expected_back_handler, (
             f"Unexpected back handler for {case}: {back_handler} != {expected_back_handler}"
         )
@@ -105,4 +120,12 @@ def test_strategy_selection_smoke(monkeypatch):
         )
         assert legs_handler == expected_legs_handler, (
             f"Unexpected legs handler for {case}: {legs_handler} != {expected_legs_handler}"
+        )
+        assert seat_frame_handler == expected_seat_frame_handler, (
+            f"Unexpected seat_frame handler for {case}: "
+            f"{seat_frame_handler} != {expected_seat_frame_handler}"
+        )
+        assert seat_slats_handler == expected_seat_slats_handler, (
+            f"Unexpected seat_slats handler for {case}: "
+            f"{seat_slats_handler} != {expected_seat_slats_handler}"
         )
