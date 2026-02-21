@@ -1,43 +1,15 @@
 """Generate a geometry plan and anchors for Blender builds."""
 
 import os
-from dataclasses import dataclass, field
-from typing import Dict, List, Tuple
+import uuid
 
-from src.builders.blender.geom_utils import clamp as _clamp
+from src.builders.blender.diagnostics import make_event
 from src.builders.blender.geom_utils import ir_value as _ir_value
-
-
-@dataclass
-class Primitive:
-    """Represents a basic geometry primitive."""
-
-    name: str
-    shape: str
-    dimensions_mm: Tuple[float, float, float]
-    location_mm: Tuple[float, float, float]
-    rotation_deg: Tuple[float, float, float] = (0.0, 0.0, 0.0)
-    params: Dict[str, float] = field(default_factory=dict)
-
-
-@dataclass
-class Anchor:
-    """Named anchor or empty location."""
-
-    name: str
-    location_mm: Tuple[float, float, float]
-
-
-@dataclass
-class BuildPlan:
-    """Container for primitives and anchors to build a sofa frame."""
-
-    primitives: List[Primitive] = field(default_factory=list)
-    anchors: List[Anchor] = field(default_factory=list)
-    metadata: Dict[str, str] = field(default_factory=dict)
+from src.builders.blender.plan_types import Anchor, BuildPlan
 
 
 def _ir_bool(ir: dict, key: str, default: bool) -> bool:
+    # Shared tolerant bool parser kept for compatibility with older helpers.
     value = ir.get(key, default)
     if isinstance(value, bool):
         return value
@@ -62,16 +34,8 @@ def _canon_arms_type(value: str) -> str:
     return "none"
 
 
-def _arms_count(arms_type: str) -> int:
-    """Return number of arm blocks for a canonical arms_type."""
-    if arms_type == "both":
-        return 2
-    if arms_type in {"left", "right"}:
-        return 1
-    return 0
-
-
 def _debug_env_enabled() -> bool:
+    # Any non-falsey DEBUG* env variable enables debug-mode prints.
     falsey = {"", "0", "false", "off", "no", "none"}
     for key, value in os.environ.items():
         if not key.startswith("DEBUG"):
@@ -81,26 +45,38 @@ def _debug_env_enabled() -> bool:
     return False
 
 
+def _diag_sink_from_env():
+    # Diagnostics are opt-in: JSONL sink only when AMS_DIAG_JSONL is set.
+    from src.builders.blender.diagnostics import JsonlDiagnosticsSink, NoopDiagnosticsSink
+
+    path = os.environ.get("AMS_DIAG_JSONL", "")
+    if isinstance(path, str) and path.strip():
+        return JsonlDiagnosticsSink(path.strip())
+    return NoopDiagnosticsSink()
+
+
 def build_plan_from_ir(ir: dict) -> BuildPlan:
     """Create a sofa-frame geometry plan from resolved IR.
 
     Coordinate system: X is width (left/right), Y is depth (front/back),
     Z is up. seat_height_mm defines the top of the seat support board.
     """
-    seat_width_mm = _ir_value(ir, "seat_width_mm", 600.0)
-    seat_depth_mm = _ir_value(ir, "seat_depth_mm", 600.0)
-    seat_height_mm = _ir_value(ir, "seat_height_mm", 440.0)
-    seat_count = max(1, int(_ir_value(ir, "seat_count", 3)))
-    seat_total_width_mm = seat_width_mm * seat_count
-
-    frame = ir.get("frame", {}) if isinstance(ir.get("frame"), dict) else {}
-    frame_thickness_mm = _ir_value(frame, "thickness_mm", 35.0)
-
+    from src.builders.blender.layout import compute_layout
     from src.builders.blender.spec.resolve import resolve
-    from src.builders.blender.spec.types import BuildContext, LayoutContext
+    from src.builders.blender.spec.types import (
+        ArmsInputs,
+        BackInputs,
+        BuildContext,
+        LegsInputs,
+        SeatFrameInputs,
+        SeatSlatsInputs,
+    )
 
+    # 1) Resolve IR + preset defaults, then compute shared layout scalars.
     resolved_spec, resolve_diagnostics = resolve(ir, preset_id=ir.get("preset_id"))
+    layout = compute_layout(ir, resolved_spec)
 
+    # 2) Collect/normalize raw config values still needed by component inputs.
     arms = ir.get("arms", {}) if isinstance(ir.get("arms"), dict) else {}
     arms_type = _canon_arms_type(resolved_spec.arms.type)
     arms_width_mm = max(0.0, float(resolved_spec.arms.width_mm))
@@ -110,14 +86,15 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
         arms_style = arms_style_raw.strip().lower()
     else:
         arms_style = str(arms_profile)
-    arms_total_mm = arms_width_mm * _arms_count(arms_type)
-    total_width_mm = seat_total_width_mm + arms_total_mm
+    frame = ir.get("frame", {}) if isinstance(ir.get("frame"), dict) else {}
+    frame_thickness_mm = _ir_value(frame, "thickness_mm", 35.0)
+    back_height_mm = _ir_value(frame, "back_height_above_seat_mm", 420.0)
 
-    legs = ir.get("legs", {}) if isinstance(ir.get("legs"), dict) else {}
-    legs_height_mm = _ir_value(legs, "height_mm", 160.0)
-    legs_family = legs.get("family", "block")
-
-    seat_support_thickness_mm = frame_thickness_mm
+    legs_family = (
+        resolved_spec.legs.family
+        if isinstance(resolved_spec.legs.family, str) and resolved_spec.legs.family
+        else "block"
+    )
 
     slats = ir.get("slats", {}) if isinstance(ir.get("slats"), dict) else {}
     slats_enabled = bool(slats.get("enabled", False))
@@ -141,226 +118,177 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
     slat_rail_width_mm = _ir_value(slats, "rail_width_mm", frame_thickness_mm)
     slat_rail_inset_y_mm = _ir_value(slats, "rail_inset_y_mm", slat_margin_y_mm)
 
-    # Z placement stack: legs -> base frame -> seat support -> back frame -> arms.
-    # Seat support top aligns to seat_height_mm.
-    seat_support_top_z = seat_height_mm
-    seat_support_center_z = seat_support_top_z - (seat_support_thickness_mm / 2.0)
-    base_frame_top_z = seat_support_top_z - seat_support_thickness_mm
-    base_frame_center_z = base_frame_top_z - (frame_thickness_mm / 2.0)
-    base_frame_bottom_z = base_frame_top_z - frame_thickness_mm
-    legs_center_z = base_frame_bottom_z - (legs_height_mm / 2.0)
-
+    # 3) Initialize plan metadata used by debug/tools.
     plan = BuildPlan(metadata={
-        "seat_count": str(seat_count),
+        "seat_count": str(layout.seat_count),
         "legs_family": str(legs_family),
         "arms_type": str(arms_type),
         "arms_profile": str(arms_profile),
         "arms_style": str(arms_style),
-        "seat_total_width_mm": str(seat_total_width_mm),
-        "total_width_mm": str(total_width_mm),
+        "seat_total_width_mm": str(layout.seat_total_width_mm),
+        "total_width_mm": str(layout.total_width_mm),
     })
 
-    # Base frame beams (outer perimeter of total frame).
-    front_y = (seat_depth_mm / 2.0) - (frame_thickness_mm / 2.0)
-    back_y = -(seat_depth_mm / 2.0) + (frame_thickness_mm / 2.0)
-    left_x = -(total_width_mm / 2.0) + (frame_thickness_mm / 2.0)
-    right_x = (total_width_mm / 2.0) - (frame_thickness_mm / 2.0)
-
-    plan.primitives.extend(
-        [
-            Primitive(
-                name="beam_front",
-                shape="beam",
-                dimensions_mm=(total_width_mm, frame_thickness_mm, frame_thickness_mm),
-                location_mm=(0.0, front_y, base_frame_center_z),
-            ),
-            Primitive(
-                name="beam_back",
-                shape="beam",
-                dimensions_mm=(total_width_mm, frame_thickness_mm, frame_thickness_mm),
-                location_mm=(0.0, back_y, base_frame_center_z),
-            ),
-            Primitive(
-                name="beam_left",
-                shape="beam",
-                dimensions_mm=(frame_thickness_mm, seat_depth_mm, frame_thickness_mm),
-                location_mm=(left_x, 0.0, base_frame_center_z),
-            ),
-            Primitive(
-                name="beam_right",
-                shape="beam",
-                dimensions_mm=(frame_thickness_mm, seat_depth_mm, frame_thickness_mm),
-                location_mm=(right_x, 0.0, base_frame_center_z),
-            ),
-        ]
+    # 4) Build runtime context (debug + diagnostics sink).
+    build_ctx = BuildContext(
+        run_id=uuid.uuid4().hex,
+        debug=_debug_env_enabled(),
+        diag=_diag_sink_from_env(),
+    )
+    # Structured lifecycle event for external logging/analysis.
+    build_ctx.diag.emit(
+        make_event(
+            run_id=build_ctx.run_id,
+            stage="build",
+            component="builder",
+            code="BUILD_START",
+            severity=0,
+            source="computed",
+            reason="build pipeline start",
+            resolved_value={
+                "ir_id": ir.get("id"),
+                "preset_id": ir.get("preset_id"),
+                "style": resolved_spec.style,
+            },
+        )
+    )
+    for event in resolve_diagnostics.warnings:
+        build_ctx.diag.emit(
+            make_event(
+                ts=event.ts,
+                run_id=build_ctx.run_id,
+                stage=event.stage,
+                component=event.component,
+                code=event.code,
+                severity=event.severity,
+                path=event.path,
+                source=event.source,
+                input_value=event.input_value,
+                resolved_value=event.resolved_value,
+                reason=event.reason,
+                meta=event.meta,
+            )
+        )
+    # 5) Materialize per-component input objects (no geometry logic here).
+    seat_frame_inputs = SeatFrameInputs(
+        seat_count=layout.seat_count,
+        total_width_mm=layout.total_width_mm,
+        seat_depth_mm=layout.seat_depth_mm,
+        frame_thickness_mm=layout.frame_thickness_mm,
+        base_frame_center_z=layout.base_frame_center_z,
+        slats_enabled=slats_enabled,
+        seat_total_width_mm=layout.seat_total_width_mm,
+        seat_support_center_z=layout.seat_support_center_z,
+    )
+    seat_slats_inputs = SeatSlatsInputs(
+        slats_enabled=slats_enabled,
+        seat_depth_mm=layout.seat_depth_mm,
+        seat_total_width_mm=layout.seat_total_width_mm,
+        slat_count=slat_count,
+        slat_width_mm=slat_width_mm,
+        slat_thickness_mm=slat_thickness_mm,
+        slat_arc_height_mm=slat_arc_height_mm,
+        slat_arc_sign=slat_arc_sign,
+        slat_margin_x_mm=slat_margin_x_mm,
+        slat_margin_y_mm=slat_margin_y_mm,
+        slat_clearance_mm=slat_clearance_mm,
+        slat_mount_mode=slat_mount_mode,
+        slat_mount_offset_mm=slat_mount_offset_mm,
+        slat_rail_inset_mm=slat_rail_inset_mm,
+        slat_rail_height_mm=slat_rail_height_mm,
+        slat_rail_width_mm=slat_rail_width_mm,
+        slat_rail_inset_y_mm=slat_rail_inset_y_mm,
+        base_frame_top_z=layout.base_frame_top_z,
+        seat_support_top_z=layout.seat_support_top_z,
+    )
+    back_inputs = BackInputs(
+        back=resolved_spec.back,
+        seat_total_width_mm=layout.seat_total_width_mm,
+        total_width_mm=layout.total_width_mm,
+        seat_depth_mm=layout.seat_depth_mm,
+        frame_thickness_mm=layout.frame_thickness_mm,
+        seat_support_top_z=layout.seat_support_top_z,
+        base_frame_top_z=layout.base_frame_top_z,
+        base_frame_center_z=layout.base_frame_center_z,
+        back_plane_y=layout.back_plane_y,
+    )
+    arms_inputs = ArmsInputs(
+        arms_type=arms_type,
+        arms_width_mm=arms_width_mm,
+        profile=arms_profile,
+        seat_width_mm=layout.seat_width_mm,
+        seat_depth_mm=layout.seat_depth_mm,
+        seat_height_mm=layout.seat_height_mm,
+        seat_count=layout.seat_count,
+        frame_thickness_mm=layout.frame_thickness_mm,
+        back_height_mm=back_height_mm,
+        arms_config=arms,
+        back_support_config=(
+            ir.get("back_support", {})
+            if isinstance(ir.get("back_support"), dict)
+            else {}
+        ),
+    )
+    legs_inputs = LegsInputs(
+        family=resolved_spec.legs.family,
+        height_mm=resolved_spec.legs.height_mm,
+        total_width_mm=layout.total_width_mm,
+        frame_thickness_mm=layout.frame_thickness_mm,
+        seat_depth_mm=layout.seat_depth_mm,
+        base_frame_top_z=layout.base_frame_top_z,
     )
 
-    # Cross beams across depth (along Y), evenly spaced along X.
-    cross_count = max(2, min(4, seat_count + 1))
-    inner_width_mm = max(1.0, total_width_mm - (2.0 * frame_thickness_mm))
-    cross_spacing_mm = inner_width_mm / (cross_count + 1)
-    for i in range(cross_count):
-        x = -(inner_width_mm / 2.0) + cross_spacing_mm * (i + 1)
-        plan.primitives.append(
-            Primitive(
-                name=f"beam_cross_{i + 1}",
-                shape="beam",
-                dimensions_mm=(frame_thickness_mm, seat_depth_mm - (2.0 * frame_thickness_mm), frame_thickness_mm),
-                location_mm=(x, 0.0, base_frame_center_z),
-            )
-        )
+    # 6) Build components in stable order; order is regression-sensitive.
+    from src.builders.blender.components.seat_frame import build_seat_frame
 
-    # Seat support board (seat area only) on top of base frame.
-    if not slats_enabled:
-        plan.primitives.append(
-            Primitive(
-                name="seat_support",
-                shape="board",
-                dimensions_mm=(seat_total_width_mm, seat_depth_mm, seat_support_thickness_mm),
-                location_mm=(0.0, 0.0, seat_support_center_z),
-            )
-        )
+    build_seat_frame(
+        plan=plan,
+        inputs=seat_frame_inputs,
+        ctx=build_ctx,
+    )
 
-    # Slats (lamellas) across X, running along Y with front/back margins.
-    if slats_enabled:
-        slat_length_mm = max(1.0, seat_depth_mm - (2.0 * slat_margin_y_mm))
-        rail_length_mm = max(1.0, seat_depth_mm - (2.0 * slat_rail_inset_y_mm))
-        usable_width_mm = max(1.0, seat_total_width_mm - (2.0 * slat_margin_x_mm))
-        if slat_count == 1:
-            slat_centers_x = [0.0]
-        else:
-            span_mm = max(0.0, usable_width_mm - slat_width_mm)
-            step_mm = span_mm / (slat_count - 1)
-            start_x = -(usable_width_mm / 2.0) + (slat_width_mm / 2.0)
-            slat_centers_x = [start_x + (step_mm * i) for i in range(slat_count)]
+    from src.builders.blender.components.seat_slats import build_seat_slats
 
-        # Slats mount to the base frame top plane unless explicitly centered.
-        slat_plane_z_mm = base_frame_top_z
-        if slat_mount_mode == "centered":
-            slat_center_z = seat_support_top_z - (slat_thickness_mm / 2.0) + slat_clearance_mm
-        else:
-            slat_center_z = (
-                slat_plane_z_mm
-                + slat_mount_offset_mm
-                + slat_clearance_mm
-                + (slat_thickness_mm / 2.0)
-            )
-
-        min_x = min(slat_centers_x) - (slat_width_mm / 2.0)
-        max_x = max(slat_centers_x) + (slat_width_mm / 2.0)
-        rail_height_mm = slat_rail_height_mm
-        rail_width_mm = slat_rail_width_mm
-        rail_depth_mm = rail_length_mm
-        rail_top_z = slat_plane_z_mm
-        rail_center_z = rail_top_z - (rail_height_mm / 2.0)
-        rail_left_x = min_x + (rail_width_mm / 2.0) + slat_rail_inset_mm
-        rail_right_x = max_x - (rail_width_mm / 2.0) - slat_rail_inset_mm
-        if rail_left_x < rail_right_x:
-            plan.primitives.append(
-                Primitive(
-                    name="rail_left",
-                    shape="beam",
-                    dimensions_mm=(rail_width_mm, rail_depth_mm, rail_height_mm),
-                    location_mm=(rail_left_x, 0.0, rail_center_z),
-                )
-            )
-            plan.primitives.append(
-                Primitive(
-                    name="rail_right",
-                    shape="beam",
-                    dimensions_mm=(rail_width_mm, rail_depth_mm, rail_height_mm),
-                    location_mm=(rail_right_x, 0.0, rail_center_z),
-                )
-            )
-            plan.anchors.append(
-                Anchor(name="rail_left", location_mm=(rail_left_x, 0.0, rail_center_z))
-            )
-            plan.anchors.append(
-                Anchor(name="rail_right", location_mm=(rail_right_x, 0.0, rail_center_z))
-            )
-
-        plan.anchors.append(Anchor(name="slat_plane_z", location_mm=(0.0, 0.0, slat_plane_z_mm)))
-        plan.anchors.append(Anchor(name="slat_area_center", location_mm=(0.0, 0.0, slat_center_z)))
-        for i, x in enumerate(slat_centers_x, start=1):
-            plan.primitives.append(
-                Primitive(
-                    name=f"slat_{i}",
-                    shape="slat",
-                    dimensions_mm=(slat_width_mm, slat_length_mm, slat_thickness_mm),
-                    location_mm=(x, 0.0, slat_center_z),
-                    params={
-                        "arc_height_mm": slat_arc_height_mm,
-                        "arc_sign": slat_arc_sign,
-                        "orientation": "horizontal",
-                        "mount_mode": slat_mount_mode,
-                        "mount_offset_mm": slat_mount_offset_mm,
-                        "clearance_mm": slat_clearance_mm,
-                    },
-                )
-            )
+    build_seat_slats(
+        plan=plan,
+        inputs=seat_slats_inputs,
+        ctx=build_ctx,
+    )
 
     from src.builders.blender.components.back import build_back
 
-    build_ctx = BuildContext(
-        run_id=None,
-        debug=_debug_env_enabled(),
-    )
-    layout_ctx = LayoutContext(
-        seat_total_width_mm=seat_total_width_mm,
-        total_width_mm=total_width_mm,
-        seat_depth_mm=seat_depth_mm,
-        frame_thickness_mm=frame_thickness_mm,
-        seat_support_top_z=seat_support_top_z,
-        base_frame_top_z=base_frame_top_z,
-        base_frame_center_z=base_frame_center_z,
-        back_y=back_y,
-    )
-    if build_ctx.debug:
-        for warning in resolve_diagnostics.warnings:
-            print(
-                "RESOLVE_WARNING "
-                f"code={warning.get('code', '')} "
-                f"path={warning.get('path', '')} "
-                f"old={warning.get('old', '')} "
-                f"new={warning.get('new', '')} "
-                f"source={warning.get('source', '')}"
-            )
+    build_back(plan=plan, inputs=back_inputs, ctx=build_ctx)
 
-    build_back(plan=plan, spec=resolved_spec, ctx=build_ctx, layout=layout_ctx)
-
-    # Arms: delegated to component (thin seam).
+    # Arms/legs are also delegated via thin seams.
     from src.builders.blender.components.arms import build_arms
+    from src.builders.blender.components.legs import build_legs
 
-    arms_primitives_out: List[Primitive] = []
-    build_arms(
+    build_arms(plan=plan, inputs=arms_inputs, ctx=build_ctx)
+
+    build_legs(
         plan=plan,
-        spec=resolved_spec,
+        inputs=legs_inputs,
         ctx=build_ctx,
-        ir=ir,
-        primitives_out=arms_primitives_out,
     )
 
-    # Leg anchors and leg primitives at corners.
-    leg_offset_x = (total_width_mm / 2.0) - (frame_thickness_mm / 2.0)
-    leg_offset_y = (seat_depth_mm / 2.0) - (frame_thickness_mm / 2.0)
-    leg_points = [
-        (-leg_offset_x, -leg_offset_y, legs_center_z),
-        (leg_offset_x, -leg_offset_y, legs_center_z),
-        (-leg_offset_x, leg_offset_y, legs_center_z),
-        (leg_offset_x, leg_offset_y, legs_center_z),
-    ]
-
-    for index, point in enumerate(leg_points, start=1):
-        plan.anchors.append(Anchor(name=f"leg_point_{index}", location_mm=point))
-        plan.primitives.append(
-            Primitive(
-                name=f"leg_{index}",
-                shape=legs_family,
-                dimensions_mm=(frame_thickness_mm, frame_thickness_mm, legs_height_mm),
-                location_mm=point,
-            )
+    # Keep legacy seat zone anchor for downstream tools/validators.
+    plan.anchors.append(Anchor(name="seat_zone", location_mm=(0.0, 0.0, layout.seat_support_center_z)))
+    # Structured lifecycle event with resulting plan sizes.
+    build_ctx.diag.emit(
+        make_event(
+            run_id=build_ctx.run_id,
+            stage="build",
+            component="builder",
+            code="BUILD_DONE",
+            severity=0,
+            source="computed",
+            reason="build pipeline done",
+            resolved_value={
+                "ir_id": ir.get("id"),
+                "primitives_count": len(plan.primitives),
+                "anchors_count": len(plan.anchors),
+            },
         )
-
-    plan.anchors.append(Anchor(name="seat_zone", location_mm=(0.0, 0.0, seat_support_center_z)))
+    )
 
     return plan

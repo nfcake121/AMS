@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from src.builders.blender.diagnostics import make_event
 from src.builders.blender.spec.catalog import default_preset_id, get_preset
 from src.builders.blender.spec.types import (
     ArmsSpec,
@@ -10,6 +11,7 @@ from src.builders.blender.spec.types import (
     BackSpec,
     BackStrapsSpec,
     CenterPostSpec,
+    LegsSpec,
     ResolveDiagnostics,
     ResolvedSpec,
 )
@@ -32,6 +34,7 @@ _BACK_SLAT_ORIENTATION_VALUES = {"vertical", "horizontal"}
 _BACK_SLAT_LAYOUT_VALUES = {"full", "split_center"}
 _BACK_SUPPORT_MODES = {"panel", "slats", "straps"}
 _BACK_ATTACH_MODES = {"seat_rear_beam", "none"}
+_LEGS_KNOWN_FAMILIES = {"block", "tapered_cone", "cylindrical"}
 
 
 def _warn(
@@ -41,17 +44,24 @@ def _warn(
     path: str,
     old,
     new,
-    source: str = "resolver",
+    source: str = "fallback",
+    severity: int = 1,
+    component: str = "resolver",
+    meta: dict | None = None,
 ) -> None:
     diagnostics.warnings.append(
-        {
-            "code": code,
-            "message": message,
-            "path": path,
-            "old": old,
-            "new": new,
-            "source": source,
-        }
+        make_event(
+            stage="resolve",
+            component=component,
+            code=code,
+            severity=severity,
+            path=path,
+            source=source,
+            input_value=old,
+            resolved_value=new,
+            reason=message,
+            meta=meta or {},
+        )
     )
 
 
@@ -104,6 +114,8 @@ def _clamp_non_negative(
             path=path,
             old=value,
             new=0.0,
+            source="computed",
+            meta={"rule": "clamp>=0"},
         )
         return 0.0
     return value
@@ -125,6 +137,8 @@ def _clamp_range(
             path=path,
             old=value,
             new=clamped,
+            source="computed",
+            meta={"min": min_value, "max": max_value},
         )
     return clamped
 
@@ -216,6 +230,9 @@ def resolve_back_spec(ir: dict, preset: dict, diagnostics: ResolveDiagnostics) -
             path="back_support",
             old=None,
             new=preset_back.get("mode", "panel"),
+            source="global",
+            severity=0,
+            meta={"rule": "missing->default"},
         )
 
     frame_root = ir.get("frame", {}) if isinstance(ir.get("frame"), dict) else {}
@@ -446,6 +463,8 @@ def resolve_back_spec(ir: dict, preset: dict, diagnostics: ResolveDiagnostics) -
             path="back_support.slats.count",
             old=slat_count_raw,
             new=slat_count,
+            source="computed",
+            meta={"rule": "clamp>=0"},
         )
     slat_width_mm = _clamp_non_negative(
         diagnostics,
@@ -484,6 +503,8 @@ def resolve_back_spec(ir: dict, preset: dict, diagnostics: ResolveDiagnostics) -
             path="back_support.straps.count",
             old=strap_count_raw,
             new=strap_count,
+            source="computed",
+            meta={"rule": "clamp>=0"},
         )
     strap_width_mm = _clamp_non_negative(
         diagnostics,
@@ -550,6 +571,87 @@ def resolve_back_spec(ir: dict, preset: dict, diagnostics: ResolveDiagnostics) -
     )
 
 
+def resolve_legs_spec(ir: dict, preset: dict, diagnostics: ResolveDiagnostics) -> LegsSpec:
+    has_legs = "legs" in ir
+    legs_raw = ir.get("legs")
+    if has_legs and not isinstance(legs_raw, dict):
+        _warn(
+            diagnostics,
+            code="LEG_FALLBACK",
+            message="legs must be an object; fallback to defaults",
+            path="legs",
+            old=type(legs_raw).__name__,
+            new="{}",
+        )
+    legs = legs_raw if isinstance(legs_raw, dict) else {}
+    preset_legs = preset.get("legs", {}) if isinstance(preset.get("legs"), dict) else {}
+
+    family_raw, _ = _pick_value(legs, preset_legs, "family", "block")
+    height_raw, _ = _pick_value(legs, preset_legs, "height_mm", 160.0)
+    params_raw, _ = _pick_value(legs, preset_legs, "params", {})
+    enabled_raw, _ = _pick_value(legs, preset_legs, "enabled", True)
+
+    if family_raw is None:
+        family = None
+    elif isinstance(family_raw, str):
+        family = family_raw
+        if family not in _LEGS_KNOWN_FAMILIES:
+            _warn(
+                diagnostics,
+                code="LEG_FALLBACK",
+                message="unknown legs.family kept as-is for compatibility",
+                path="legs.family",
+                old=family_raw,
+                new=family_raw,
+            )
+    else:
+        family = "block"
+        _warn(
+            diagnostics,
+            code="LEG_FALLBACK",
+            message="non-string legs.family fallback to block",
+            path="legs.family",
+            old=family_raw,
+            new=family,
+        )
+
+    height_mm = _as_float(height_raw, 160.0)
+    if height_mm < 0.0:
+        _warn(
+            diagnostics,
+            code="LEG_CLAMP",
+            message="legs.height_mm clamped to 0.0",
+            path="legs.height_mm",
+            old=height_mm,
+            new=0.0,
+            source="computed",
+            meta={"rule": "clamp>=0"},
+        )
+        height_mm = 0.0
+
+    if isinstance(params_raw, dict):
+        params = dict(params_raw)
+    else:
+        params = {}
+        _warn(
+            diagnostics,
+            code="LEG_FALLBACK",
+            message="legs.params must be an object; fallback to {}",
+            path="legs.params",
+            old=type(params_raw).__name__ if params_raw is not None else None,
+            new={},
+        )
+
+    enabled = _as_bool(enabled_raw, True)
+
+    return LegsSpec(
+        family=family,
+        height_mm=height_mm,
+        params=params,
+        enabled=enabled,
+    )
+
+
 def resolve(ir: dict, preset_id: str | None = None) -> tuple[ResolvedSpec, ResolveDiagnostics]:
     diagnostics = ResolveDiagnostics()
 
@@ -583,12 +685,27 @@ def resolve(ir: dict, preset_id: str | None = None) -> tuple[ResolvedSpec, Resol
             path="arms.width_mm",
             old=width_mm,
             new=0.0,
+            source="computed",
+            meta={"rule": "clamp>=0"},
         )
         width_mm = 0.0
 
     profile_raw = arms.get("profile", preset_arms.get("profile", "box"))
     style_for_profile_raw = arms.get("style", preset_arms.get("style", "box"))
     profile, profile_fallback = _canonical_profile(profile_raw, style_for_profile_raw)
+    profile_raw_norm = profile_raw.strip().lower() if isinstance(profile_raw, str) else ""
+    if not profile_fallback and profile_raw_norm and profile != profile_raw_norm:
+        _warn(
+            diagnostics,
+            code="PROFILE_ALIAS",
+            message="arms.profile canonicalized",
+            path="arms.profile",
+            old=profile_raw,
+            new=profile,
+            source="computed",
+            severity=0,
+            meta={"rule": "alias->canonical"},
+        )
     if profile_fallback:
         _warn(
             diagnostics,
@@ -597,9 +714,11 @@ def resolve(ir: dict, preset_id: str | None = None) -> tuple[ResolvedSpec, Resol
             path="arms.profile",
             old=profile_raw,
             new="box",
+            source="fallback",
         )
 
     back_spec = resolve_back_spec(ir=ir, preset=preset, diagnostics=diagnostics)
+    legs_spec = resolve_legs_spec(ir=ir, preset=preset, diagnostics=diagnostics)
 
     resolved = ResolvedSpec(
         style=style,
@@ -610,7 +729,7 @@ def resolve(ir: dict, preset_id: str | None = None) -> tuple[ResolvedSpec, Resol
             profile=profile,
         ),
         back=back_spec,
+        legs=legs_spec,
         seat=None,
-        legs=None,
     )
     return resolved, diagnostics

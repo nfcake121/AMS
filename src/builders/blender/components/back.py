@@ -5,9 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Tuple
 
-from src.builders.blender.builder_v01 import Anchor, Primitive
+from src.builders.blender.diagnostics import make_event
 from src.builders.blender.geom_utils import clamp, primitive_bbox_world
-from src.builders.blender.spec.types import BackSpec, BuildContext, LayoutContext, ResolvedSpec
+from src.builders.blender.plan_types import Anchor, Primitive
+from src.builders.blender.spec.types import BackInputs, BackSpec, BuildContext
 
 
 @dataclass(frozen=True)
@@ -402,8 +403,7 @@ def _build_back_from_spec(plan, spec: BackSpec, ctx: BuildContext, helpers: Back
             ]
         )
 
-    if not has_back_support:
-        # Backward-compatible panel using frame.back_* dimensions.
+    def _build_legacy_back_frame() -> None:
         legacy_back_plane_y = seat_back_rail_outer_face_y - (back_thickness_mm / 2.0) + back_offset_y_mm
         legacy_back_center_z = seat_support_top_z + (back_height_mm / 2.0)
         plan.primitives.append(
@@ -414,7 +414,8 @@ def _build_back_from_spec(plan, spec: BackSpec, ctx: BuildContext, helpers: Back
                 location_mm=(0.0, legacy_back_plane_y, legacy_back_center_z),
             )
         )
-    elif back_support_mode == "panel":
+
+    def _build_mode_panel() -> None:
         plan.primitives.append(
             Primitive(
                 name="back_panel",
@@ -423,7 +424,31 @@ def _build_back_from_spec(plan, spec: BackSpec, ctx: BuildContext, helpers: Back
                 location_mm=back_panel_center,
             )
         )
-    elif back_support_mode == "slats":
+
+    def _build_mode_straps() -> None:
+        strap_center_x = 0.0
+        strap_span_z_mm = max(1.0, (back_frame_height_mm - back_frame_member_mm) - (2.0 * back_margin_z_mm))
+        effective_back_strap_count = max(1, int(back_strap_count))
+        if effective_back_strap_count == 1:
+            strap_centers_z = [back_frame_base_z + ((back_frame_height_mm - back_frame_member_mm) / 2.0)]
+        else:
+            step_mm = strap_span_z_mm / (effective_back_strap_count - 1)
+            start_z = back_frame_base_z + back_margin_z_mm
+            strap_centers_z = [start_z + (step_mm * i) for i in range(effective_back_strap_count)]
+
+        for i, z in enumerate(strap_centers_z, start=1):
+            plan.primitives.append(
+                Primitive(
+                    name=f"back_strap_{i}",
+                    shape="board",
+                    dimensions_mm=(seat_total_width_mm, back_strap_thickness_mm, back_strap_width_mm),
+                    location_mm=(strap_center_x, back_frame_center_y, z),
+                )
+            )
+
+    def _build_mode_slats() -> None:
+        nonlocal back_slats_bbox_inner_text
+
         inset_x_mm = max(3.0, back_rail_inset_mm)
         inset_z_mm = max(3.0, back_rail_inset_mm)
         margin_x_mm = max(0.0, back_margin_x_mm)
@@ -510,8 +535,8 @@ def _build_back_from_spec(plan, spec: BackSpec, ctx: BuildContext, helpers: Back
             Anchor(name="back_frame_inner_rect_max", location_mm=(inner_max_x, back_frame_center_y, inner_top_z))
         )
 
-        if back_slat_orientation == "horizontal":
-            back_slats_bbox_inner_text = build_back_horizontal_slats(
+        def _build_slats_horizontal() -> str:
+            return build_back_horizontal_slats(
                 plan=plan,
                 back_slat_width_mm=back_slat_width_mm,
                 back_slat_thickness_mm=back_slat_thickness_mm,
@@ -533,8 +558,9 @@ def _build_back_from_spec(plan, spec: BackSpec, ctx: BuildContext, helpers: Back
                 bottom_rail_gap_mm=bottom_rail_gap_mm,
                 back_slat_debug_primitives=back_slat_debug_primitives,
             )
-        else:
-            back_slats_bbox_inner_text = build_back_vertical_slats(
+
+        def _build_slats_vertical() -> str:
+            return build_back_vertical_slats(
                 plan=plan,
                 back_slat_width_mm=back_slat_width_mm,
                 back_slat_thickness_mm=back_slat_thickness_mm,
@@ -557,48 +583,99 @@ def _build_back_from_spec(plan, spec: BackSpec, ctx: BuildContext, helpers: Back
                 bottom_rail_gap_mm=bottom_rail_gap_mm,
                 back_slat_debug_primitives=back_slat_debug_primitives,
             )
-    elif back_support_mode == "straps":
-        strap_center_x = 0.0
-        strap_span_z_mm = max(1.0, (back_frame_height_mm - back_frame_member_mm) - (2.0 * back_margin_z_mm))
-        effective_back_strap_count = max(1, int(back_strap_count))
-        if effective_back_strap_count == 1:
-            strap_centers_z = [back_frame_base_z + ((back_frame_height_mm - back_frame_member_mm) / 2.0)]
-        else:
-            step_mm = strap_span_z_mm / (effective_back_strap_count - 1)
-            start_z = back_frame_base_z + back_margin_z_mm
-            strap_centers_z = [start_z + (step_mm * i) for i in range(effective_back_strap_count)]
 
-        for i, z in enumerate(strap_centers_z, start=1):
-            plan.primitives.append(
-                Primitive(
-                    name=f"back_strap_{i}",
-                    shape="board",
-                    dimensions_mm=(seat_total_width_mm, back_strap_thickness_mm, back_strap_width_mm),
-                    location_mm=(strap_center_x, back_frame_center_y, z),
-                )
-            )
+        slat_orientation_key = "horizontal" if back_slat_orientation == "horizontal" else "vertical"
+        slat_layout_key = "split_center" if back_slat_layout == "split_center" else "full"
+        SLATS_DISPATCH = {
+            ("slats", "horizontal", "full"): _build_slats_horizontal,
+            ("slats", "horizontal", "split_center"): _build_slats_horizontal,
+            ("slats", "vertical", "full"): _build_slats_vertical,
+            ("slats", "vertical", "split_center"): _build_slats_vertical,
+        }
+        back_slats_bbox_inner_text = SLATS_DISPATCH[("slats", slat_orientation_key, slat_layout_key)]()
+
+    def _build_mode_noop() -> None:
+        return
+
+    DISPATCH = {
+        ("panel", None, None): _build_mode_panel,
+        ("straps", None, None): _build_mode_straps,
+        ("slats", "horizontal", "full"): _build_mode_slats,
+        ("slats", "horizontal", "split_center"): _build_mode_slats,
+        ("slats", "vertical", "full"): _build_mode_slats,
+        ("slats", "vertical", "split_center"): _build_mode_slats,
+        ("noop", None, None): _build_mode_noop,
+    }
+
+    if not has_back_support:
+        _build_legacy_back_frame()
+    else:
+        dispatch_mode = back_support_mode if back_support_mode in {"panel", "slats", "straps"} else "noop"
+        dispatch_orientation = None
+        dispatch_layout = None
+        if dispatch_mode == "slats":
+            dispatch_orientation = "horizontal" if back_slat_orientation == "horizontal" else "vertical"
+            dispatch_layout = "split_center" if back_slat_layout == "split_center" else "full"
+        DISPATCH[(dispatch_mode, dispatch_orientation, dispatch_layout)]()
 
     if has_back_support:
-        print(f"BACK_ANCHOR y_back_seat={y_back_seat:.3f}")
-        print(
-            "BACK_FRAME "
-            f"y={back_frame_center_y:.3f} "
-            f"plane_y={back_frame_plane_y:.3f} "
-            f"attach_mode={bottom_rail_attach_mode}"
+        ctx.diag.emit(
+            make_event(
+                run_id=ctx.run_id,
+                stage="build",
+                component="back",
+                code="BACK_BUILD",
+                severity=0,
+                path="back_support",
+                source="computed",
+                resolved_value={
+                    "y_back_seat": y_back_seat,
+                    "back_frame_center_y": back_frame_center_y,
+                    "back_frame_plane_y": back_frame_plane_y,
+                    "attach_mode": bottom_rail_attach_mode,
+                    "back_frame_origin": back_frame_origin,
+                    "slats_bbox_inner": back_slats_bbox_inner_text,
+                },
+                reason="back support geometry built",
+            )
         )
-        print(f"BACK_SLATS bbox_inner={back_slats_bbox_inner_text}")
-        print(f"[builder_v01] back_frame back_frame_origin={back_frame_origin}")
         for primitive in back_frame_debug_primitives:
             bbox = primitive_bbox_world(primitive)
-            print(
-                "[builder_v01] back_frame "
-                f"{primitive.name} bbox_world.min={bbox['min']} bbox_world.max={bbox['max']}"
+            ctx.diag.emit(
+                make_event(
+                    run_id=ctx.run_id,
+                    stage="build",
+                    component="back",
+                    code="BACK_FRAME_BBOX",
+                    severity=0,
+                    path=f"back_support.frame.{primitive.name}",
+                    source="computed",
+                    resolved_value={
+                        "name": primitive.name,
+                        "bbox_min": bbox["min"],
+                        "bbox_max": bbox["max"],
+                    },
+                    reason="frame primitive bbox",
+                )
             )
         for primitive in back_slat_debug_primitives:
             bbox = primitive_bbox_world(primitive)
-            print(
-                "[builder_v01] back_frame "
-                f"{primitive.name} bbox_world.min={bbox['min']} bbox_world.max={bbox['max']}"
+            ctx.diag.emit(
+                make_event(
+                    run_id=ctx.run_id,
+                    stage="build",
+                    component="back",
+                    code="BACK_SLAT_BBOX",
+                    severity=0,
+                    path=f"back_support.slats.{primitive.name}",
+                    source="computed",
+                    resolved_value={
+                        "name": primitive.name,
+                        "bbox_min": bbox["min"],
+                        "bbox_max": bbox["max"],
+                    },
+                    reason="slat primitive bbox",
+                )
             )
 
     if has_back_support:
@@ -613,7 +690,20 @@ def _build_back_from_spec(plan, spec: BackSpec, ctx: BuildContext, helpers: Back
         back_inner_center = (0.0, back_anchor_y, seat_support_top_z + (back_height_mm / 2.0))
 
     if ctx.debug and center_post_enabled and frame_layout != "split_2":
-        print("BACK_BUILD debug=center_post_enabled_but_frame_not_split2")
+        ctx.diag.emit(
+            make_event(
+                run_id=ctx.run_id,
+                stage="build",
+                component="back",
+                code="BACK_BUILD_DEBUG",
+                severity=0,
+                path="back_support.center_post",
+                source="computed",
+                input_value={"enabled": center_post_enabled, "frame_layout": frame_layout},
+                resolved_value="split_2_expected",
+                reason="center_post_enabled_but_frame_not_split2",
+            )
+        )
 
     return BackBuildResult(
         has_back_support=has_back_support,
@@ -630,16 +720,16 @@ def _build_back_from_spec(plan, spec: BackSpec, ctx: BuildContext, helpers: Back
     )
 
 
-def _coerce_back_helpers(layout: LayoutContext) -> BackBuildHelpers:
+def _coerce_back_helpers(inputs: BackInputs) -> BackBuildHelpers:
     return BackBuildHelpers(
-        seat_total_width_mm=float(layout.seat_total_width_mm),
-        total_width_mm=float(layout.total_width_mm),
-        seat_depth_mm=float(layout.seat_depth_mm),
-        frame_thickness_mm=float(layout.frame_thickness_mm),
-        seat_support_top_z=float(layout.seat_support_top_z),
-        base_frame_top_z=float(layout.base_frame_top_z),
-        base_frame_center_z=float(layout.base_frame_center_z),
-        back_y=float(layout.back_y),
+        seat_total_width_mm=float(inputs.seat_total_width_mm),
+        total_width_mm=float(inputs.total_width_mm),
+        seat_depth_mm=float(inputs.seat_depth_mm),
+        frame_thickness_mm=float(inputs.frame_thickness_mm),
+        seat_support_top_z=float(inputs.seat_support_top_z),
+        base_frame_top_z=float(inputs.base_frame_top_z),
+        base_frame_center_z=float(inputs.base_frame_center_z),
+        back_y=float(inputs.back_plane_y),
     )
 
 
@@ -678,7 +768,7 @@ def _append_back_zone_anchors(plan, back_result: BackBuildResult, helpers: BackB
     )
 
 
-def build_back(plan, spec: ResolvedSpec, ctx: BuildContext, layout: LayoutContext) -> None:
-    helpers = _coerce_back_helpers(layout)
-    back_result = _build_back_from_spec(plan=plan, spec=spec.back, ctx=ctx, helpers=helpers)
+def build_back(plan, inputs: BackInputs, ctx: BuildContext) -> None:
+    helpers = _coerce_back_helpers(inputs)
+    back_result = _build_back_from_spec(plan=plan, spec=inputs.back, ctx=ctx, helpers=helpers)
     _append_back_zone_anchors(plan=plan, back_result=back_result, helpers=helpers)

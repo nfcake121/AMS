@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import List
 
-from src.builders.blender.builder_v01 import Anchor, Primitive
+from src.builders.blender.diagnostics import make_event
 from src.builders.blender.geom_utils import clamp, ir_value, primitives_union_bbox
-from src.builders.blender.spec.types import BuildContext, ResolvedSpec
+from src.builders.blender.plan_types import Anchor, Primitive
+from src.builders.blender.spec.types import ArmsInputs, BuildContext
 
 
 def _canon_arms_type(value: str) -> str:
@@ -23,21 +24,44 @@ def _add_primitive(plan, primitive: Primitive, primitives_out: list) -> None:
     primitives_out.append(primitive)
 
 
-def _log_arms_build(side: str, profile: str, arms_width_mm: float, arm_primitives: List[Primitive], arm_depth_mm_local: float, arm_height_mm_local: float) -> None:
+def _log_arms_build(
+    ctx: BuildContext,
+    side: str,
+    profile: str,
+    arms_width_mm: float,
+    arm_primitives: List[Primitive],
+    arm_depth_mm_local: float,
+    arm_height_mm_local: float,
+) -> None:
     arm_bbox = primitives_union_bbox(arm_primitives)
     primitive_names = ",".join(p.name for p in arm_primitives)
     center_x = 0.5 * (arm_bbox["min"][0] + arm_bbox["max"][0])
     center_y = 0.5 * (arm_bbox["min"][1] + arm_bbox["max"][1])
     center_z = 0.5 * (arm_bbox["min"][2] + arm_bbox["max"][2])
-    print(
-        "ARMS_BUILD "
-        f"profile={profile} "
-        f"side={side} "
-        f"dims_mm=(w={arms_width_mm:.3f},h={arm_height_mm_local:.3f},depth={arm_depth_mm_local:.3f}) "
-        f"pos_mm=({center_x:.3f},{center_y:.3f},{center_z:.3f}) "
-        f"bbox_min={arm_bbox['min']} "
-        f"bbox_max={arm_bbox['max']} "
-        f"primitives=[{primitive_names}]"
+    ctx.diag.emit(
+        make_event(
+            run_id=ctx.run_id,
+            stage="build",
+            component="arms",
+            code="ARMS_BUILD",
+            severity=0,
+            path="arms",
+            source="computed",
+            reason="component geometry emitted",
+            meta={
+                "profile": profile,
+                "side": side,
+                "dims_mm": {
+                    "w": round(float(arms_width_mm), 6),
+                    "h": round(float(arm_height_mm_local), 6),
+                    "depth": round(float(arm_depth_mm_local), 6),
+                },
+                "pos_mm": [center_x, center_y, center_z],
+                "bbox_min": list(arm_bbox["min"]),
+                "bbox_max": list(arm_bbox["max"]),
+                "primitives": primitive_names,
+            },
+        )
     )
 
 
@@ -58,10 +82,7 @@ def build_arm_box(plan, side: str, seat_total_width_mm: float, arms_width_mm: fl
     plan.anchors.append(Anchor(name=f"arm_{side}_zone", location_mm=(arm_center_x, 0.0, seat_height_mm)))
 
 
-def build_arm_frame_open(plan, side: str, arms_width_mm: float, seat_total_width_mm: float, seat_depth_mm: float, seat_height_mm: float, frame_thickness_mm: float, back_height_mm: float, ir: dict, primitives_out: list) -> None:
-    arms = ir.get("arms", {}) if isinstance(ir.get("arms"), dict) else {}
-    back_support_for_arms = ir.get("back_support", {}) if isinstance(ir.get("back_support"), dict) else {}
-
+def build_arm_frame_open(plan, side: str, arms_width_mm: float, seat_total_width_mm: float, seat_depth_mm: float, seat_height_mm: float, frame_thickness_mm: float, back_height_mm: float, arms: dict, back_support_for_arms: dict, primitives_out: list, ctx: BuildContext) -> None:
     arm_back_height_source = ir_value(back_support_for_arms, "height_above_seat_mm", back_height_mm)
     arm_height_mm = max(1.0, ir_value(arms, "height_mm", seat_height_mm + (arm_back_height_source * 0.35)))
 
@@ -216,6 +237,7 @@ def build_arm_frame_open(plan, side: str, arms_width_mm: float, seat_total_width
     plan.anchors.append(Anchor(name=f"{side_prefix}_zone", location_mm=(arm_center_x, frame_center_y, seat_height_mm)))
 
     _log_arms_build(
+        ctx=ctx,
         side=side,
         profile="frame_box_open",
         arms_width_mm=arms_width_mm,
@@ -225,29 +247,55 @@ def build_arm_frame_open(plan, side: str, arms_width_mm: float, seat_total_width
     )
 
 
-def build_arms(plan, spec: ResolvedSpec, ctx: BuildContext, ir: dict, primitives_out: list) -> None:
-    del ctx
-    seat_width_mm = ir_value(ir, "seat_width_mm", 600.0)
-    seat_depth_mm = ir_value(ir, "seat_depth_mm", 600.0)
-    seat_height_mm = ir_value(ir, "seat_height_mm", 440.0)
-    seat_count = max(1, int(ir_value(ir, "seat_count", 3)))
+def build_arms(plan, inputs: ArmsInputs, ctx: BuildContext) -> None:
+    seat_width_mm = float(inputs.seat_width_mm)
+    seat_depth_mm = float(inputs.seat_depth_mm)
+    seat_height_mm = float(inputs.seat_height_mm)
+    seat_count = max(1, int(inputs.seat_count))
     seat_total_width_mm = seat_width_mm * seat_count
-
-    frame = ir.get("frame", {}) if isinstance(ir.get("frame"), dict) else {}
-    frame_thickness_mm = ir_value(frame, "thickness_mm", 35.0)
-    back_height_mm = ir_value(frame, "back_height_above_seat_mm", 420.0)
-
-    arms_type = _canon_arms_type(spec.arms.type)
-    arms_width_mm = max(0.0, float(spec.arms.width_mm))
-    profile = str(spec.arms.profile or "box")
+    frame_thickness_mm = float(inputs.frame_thickness_mm)
+    back_height_mm = float(inputs.back_height_mm)
+    arms_type = _canon_arms_type(inputs.arms_type)
+    arms_width_mm = max(0.0, float(inputs.arms_width_mm))
+    profile = str(inputs.profile or "box")
+    arms = inputs.arms_config if isinstance(inputs.arms_config, dict) else {}
+    back_support_for_arms = (
+        inputs.back_support_config
+        if isinstance(inputs.back_support_config, dict)
+        else {}
+    )
+    primitives_out: list = []
 
     if profile not in {"box", "frame_box_open"}:
-        print(
-            "RESOLVE_WARNING "
-            "code=PROFILE_FALLBACK_TO_BOX "
-            f"message=unsupported arms profile '{profile}' -> 'box'"
+        ctx.diag.emit(
+            make_event(
+                run_id=ctx.run_id,
+                stage="build",
+                component="arms",
+                code="PROFILE_FALLBACK_TO_BOX",
+                severity=1,
+                path="arms.profile",
+                source="fallback",
+                input_value=profile,
+                resolved_value="box",
+                reason="unsupported profile",
+                meta={"allowed": ["box", "frame_box_open"]},
+            )
         )
         profile = "box"
+    ctx.diag.emit(
+            make_event(
+                run_id=ctx.run_id,
+                stage="build",
+                component="arms",
+                code="STRATEGY_SELECTED",
+                severity=0,
+                path="arms.profile",
+                source="computed",
+                resolved_value={"profile": profile, "arms_type": arms_type},
+                reason="dispatch arms build strategy",
+            )
+        )
 
     if arms_type in {"both", "left"}:
         if profile == "frame_box_open":
@@ -260,8 +308,10 @@ def build_arms(plan, spec: ResolvedSpec, ctx: BuildContext, ir: dict, primitives
                 seat_height_mm=seat_height_mm,
                 frame_thickness_mm=frame_thickness_mm,
                 back_height_mm=back_height_mm,
-                ir=ir,
+                arms=arms,
+                back_support_for_arms=back_support_for_arms,
                 primitives_out=primitives_out,
+                ctx=ctx,
             )
         else:
             base_frame_top_z = seat_height_mm - frame_thickness_mm
@@ -288,8 +338,10 @@ def build_arms(plan, spec: ResolvedSpec, ctx: BuildContext, ir: dict, primitives
                 seat_height_mm=seat_height_mm,
                 frame_thickness_mm=frame_thickness_mm,
                 back_height_mm=back_height_mm,
-                ir=ir,
+                arms=arms,
+                back_support_for_arms=back_support_for_arms,
                 primitives_out=primitives_out,
+                ctx=ctx,
             )
         else:
             base_frame_top_z = seat_height_mm - frame_thickness_mm
