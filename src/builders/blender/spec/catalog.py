@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
-from src.builders.blender.presets.catalog import default_preset_id, get_preset
+from src.builders.blender.presets.catalog import (
+    default_preset_id,
+    get_preset,
+    get_preset_layers,
+)
 
 __all__ = [
     "default_preset_id",
     "get_preset",
+    "get_preset_layers",
 ]
