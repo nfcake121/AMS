@@ -4,8 +4,9 @@ import os
 import uuid
 
 from src.builders.blender.diagnostics import Severity, emit_simple
+from src.builders.blender.finalize import finalize_plan
 from src.builders.blender.geom_utils import ir_value as _ir_value
-from src.builders.blender.plan_types import Anchor, BuildPlan
+from src.builders.blender.plan_types import BuildPlan
 
 
 def _ir_bool(ir: dict, key: str, default: bool) -> bool:
@@ -307,26 +308,6 @@ def _build_components(
     )
 
 
-def _finalize_plan(plan: BuildPlan, *, layout, build_ctx, ir: dict) -> BuildPlan:
-    plan.anchors.append(Anchor(name="seat_zone", location_mm=(0.0, 0.0, layout.seat_support_center_z)))
-    emit_simple(
-        build_ctx.diag,
-        run_id=build_ctx.run_id,
-        stage="build",
-        component="builder",
-        code="BUILD_DONE",
-        severity=Severity.INFO,
-        source="computed",
-        reason="build pipeline done",
-        resolved_value={
-            "ir_id": ir.get("id"),
-            "primitives_count": len(plan.primitives),
-            "anchors_count": len(plan.anchors),
-        },
-    )
-    return plan
-
-
 def build_plan_from_ir(ir: dict) -> BuildPlan:
     """Create a sofa-frame geometry plan from resolved IR.
 
@@ -358,4 +339,4 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
         legs_inputs=legs_inputs,
         build_ctx=build_ctx,
     )
-    return _finalize_plan(plan, layout=layout, build_ctx=build_ctx, ir=ir)
+    return finalize_plan(plan, layout=layout, build_ctx=build_ctx, ir=ir)
