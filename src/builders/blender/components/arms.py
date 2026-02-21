@@ -71,6 +71,7 @@ def build_arms(plan, inputs: ArmsInputs, ctx: BuildContext) -> None:
         path="arms.profile",
         source="computed",
         payload={
+            "strategy": profile,
             "key": {"profile": profile, "arms_type": arms_type},
             "handler": handler_name,
         },

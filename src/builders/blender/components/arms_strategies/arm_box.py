@@ -29,7 +29,7 @@ def build_arm_box_strategy(
     arm_center_x = side_sign * ((seat_total_width_mm / 2.0) + (arms_width_mm / 2.0))
 
     arm_primitive = Primitive(
-        name=f"{side}_arm_frame",
+        name=f"arm_{side}_frame",
         shape="board",
         dimensions_mm=(arms_width_mm, seat_depth_mm, legacy_arm_height_mm),
         location_mm=(arm_center_x, 0.0, legacy_arm_center_z),
