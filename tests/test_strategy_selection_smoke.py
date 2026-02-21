@@ -29,7 +29,7 @@ class ListDiagnosticsSink:
         self.events.append(event)
 
 
-def _expected_strategy_handlers(ir: dict) -> tuple[str, str]:
+def _expected_strategy_handlers(ir: dict) -> tuple[str, str, str]:
     resolved, _ = resolve(ir, preset_id=ir.get("preset_id"))
 
     arms_profile = str(resolved.arms.profile or "box")
@@ -50,7 +50,19 @@ def _expected_strategy_handlers(ir: dict) -> tuple[str, str]:
         else:
             back_handler = "back_noop"
 
-    return back_handler, arms_handler
+    legs_family = resolved.legs.family
+    if not (isinstance(legs_family, str) and legs_family):
+        legs_family = "block"
+    if legs_family == "block":
+        legs_handler = "leg_block"
+    elif legs_family == "tapered_cone":
+        legs_handler = "leg_tapered_cone"
+    elif legs_family == "cylindrical":
+        legs_handler = "leg_cylindrical"
+    else:
+        legs_handler = "leg_passthrough"
+
+    return back_handler, arms_handler, legs_handler
 
 
 def test_strategy_selection_smoke(monkeypatch):
@@ -58,7 +70,7 @@ def test_strategy_selection_smoke(monkeypatch):
 
     for case in CASES:
         ir = json.loads(Path(case).read_text(encoding="utf-8"))
-        expected_back_handler, expected_arms_handler = _expected_strategy_handlers(ir)
+        expected_back_handler, expected_arms_handler, expected_legs_handler = _expected_strategy_handlers(ir)
 
         sink = ListDiagnosticsSink()
         monkeypatch.setattr(builder_mod, "_diag_sink_from_env", lambda: sink)
@@ -77,14 +89,20 @@ def test_strategy_selection_smoke(monkeypatch):
 
         back_events = [event for event in strategy_events if event.component == "back"]
         arms_events = [event for event in strategy_events if event.component == "arms"]
+        legs_events = [event for event in strategy_events if event.component == "legs"]
         assert back_events, f"Missing back strategy event for {case}"
         assert arms_events, f"Missing arms strategy event for {case}"
+        assert legs_events, f"Missing legs strategy event for {case}"
 
         back_handler = back_events[-1].meta.get("payload", {}).get("handler")
         arms_handler = arms_events[-1].meta.get("payload", {}).get("handler")
+        legs_handler = legs_events[-1].meta.get("payload", {}).get("handler")
         assert back_handler == expected_back_handler, (
             f"Unexpected back handler for {case}: {back_handler} != {expected_back_handler}"
         )
         assert arms_handler == expected_arms_handler, (
             f"Unexpected arms handler for {case}: {arms_handler} != {expected_arms_handler}"
+        )
+        assert legs_handler == expected_legs_handler, (
+            f"Unexpected legs handler for {case}: {legs_handler} != {expected_legs_handler}"
         )
