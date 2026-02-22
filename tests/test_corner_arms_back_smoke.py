@@ -49,14 +49,22 @@ def test_corner_arms_back_smoke(monkeypatch) -> None:
         names = [primitive.name for primitive in plan.primitives]
         assert any(name.startswith("back_main_") for name in names)
         assert any(name.startswith("back_chaise_") for name in names)
+        assert "back_corner_post" in names
         assert any(name.startswith("arm_chaise_free_end_") for name in names)
         assert any(name.startswith("arm_main_left_") or name.startswith("arm_main_right_") for name in names)
         assert not any(name.startswith("arm_join_") or name.startswith("arm_join_blocked_") for name in names)
+        assert not any(name.endswith("_frame") and name.startswith("arm_chaise_free_end_") for name in names)
         _assert_positive_finite_dims(plan)
 
         strategy_events = [
             event for event in sink.events if event.stage == "build" and event.code == "STRATEGY_SELECTED"
         ]
-        assert any(event.component == "arms" for event in strategy_events)
-        assert any(event.component == "back" for event in strategy_events)
-
+        arms_events = [event for event in strategy_events if event.component == "arms"]
+        back_events = [event for event in strategy_events if event.component == "back"]
+        assert arms_events
+        assert back_events
+        arms_payload = arms_events[-1].meta.get("payload", {})
+        assert arms_payload.get("strategy") == "corner_outer_only_frame"
+        assert arms_payload.get("profile") == "frame_box_open"
+        back_payload = back_events[-1].meta.get("payload", {})
+        assert back_payload.get("strategy") == "corner_continuous_rails"

@@ -349,8 +349,9 @@ def _build_arms_corner(
         path="arms.strategy",
         source="computed",
         payload={
-            "strategy": f"corner_{profile}",
+            "strategy": "corner_outer_only_frame",
             "handler": "build_arms_corner",
+            "profile": profile,
             "slots_used": slots_used,
         },
         reason="dispatch corner arms strategy",
@@ -414,6 +415,23 @@ def build_arms(plan, inputs: ArmsInputs, ctx: BuildContext) -> None:
     handler_name, handler = strategy_dispatch[profile]
 
     if inputs.layout_kind == "corner" and inputs.requests:
+        corner_profile = profile
+        if corner_profile != "frame_box_open":
+            emit_simple(
+                ctx.diag,
+                run_id=ctx.run_id,
+                stage="build",
+                component="arms",
+                code="CORNER_PROFILE_OVERRIDE",
+                severity=Severity.INFO,
+                path="arms.profile",
+                source="fallback",
+                input_value=profile,
+                resolved_value="frame_box_open",
+                reason="corner outer-only strategy uses frame profile",
+            )
+            corner_profile = "frame_box_open"
+        handler_name, handler = strategy_dispatch[corner_profile]
         _build_arms_corner(
             plan=plan,
             inputs=inputs,
@@ -421,7 +439,7 @@ def build_arms(plan, inputs: ArmsInputs, ctx: BuildContext) -> None:
             handler_name=handler_name,
             handler=handler,
             arms_type=arms_type,
-            profile=profile,
+            profile=corner_profile,
             seat_total_width_mm=seat_total_width_mm,
             seat_depth_mm=seat_depth_mm,
             seat_height_mm=seat_height_mm,

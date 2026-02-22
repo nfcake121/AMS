@@ -263,11 +263,13 @@ def compute_layout(
         join_ref_x = seat_chaise_min_x
         chaise_free_min_x = seat_chaise_max_x - frame_thickness_mm
         chaise_free_max_x = seat_chaise_max_x
+        main_left_allowed = True
         main_right_allowed = False
     else:
         join_ref_x = seat_chaise_max_x
         chaise_free_min_x = seat_chaise_min_x
         chaise_free_max_x = seat_chaise_min_x + frame_thickness_mm
+        main_left_allowed = False
         main_right_allowed = True
 
     segments = (
@@ -314,7 +316,7 @@ def compute_layout(
             name="main_left",
             segment="main",
             kind="arm",
-            allowed=True,
+            allowed=main_left_allowed,
             min_x=seat_min_x,
             max_x=seat_min_x + frame_thickness_mm,
             min_y=seat_min_y,

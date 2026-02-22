@@ -24,6 +24,7 @@ def test_naming_policy_contains_required_prefixes() -> None:
         "back_",
         "back_main_",
         "back_chaise_",
+        "back_corner_",
         "back_rail_",
         "back_slat_",
         "beam_",

@@ -709,9 +709,13 @@ def _append_corner_back_segment(
     temp_plan: BuildPlan,
     name_prefix: str,
     center_x: float,
+    skip_base_names: tuple[str, ...] = (),
 ) -> None:
+    skip_names = set(skip_base_names)
     x_shift = float(center_x)
     for primitive in temp_plan.primitives:
+        if primitive.name in skip_names:
+            continue
         plan.primitives.append(
             Primitive(
                 name=_rename_corner_back_name(name_prefix, primitive.name),
@@ -727,6 +731,8 @@ def _append_corner_back_segment(
             )
         )
     for anchor in temp_plan.anchors:
+        if anchor.name in skip_names:
+            continue
         plan.anchors.append(
             Anchor(
                 name=_rename_corner_back_name(name_prefix, anchor.name),
@@ -746,6 +752,7 @@ def _build_corner_back_segment(
     ctx: BuildContext,
     request,
     name_prefix: str,
+    skip_base_names: tuple[str, ...] = (),
 ) -> bool:
     if not request.allowed:
         _emit_slot_skipped(
@@ -776,13 +783,103 @@ def _build_corner_back_segment(
         temp_plan=temp_plan,
         name_prefix=name_prefix,
         center_x=segment_center_x,
+        skip_base_names=skip_base_names,
     )
     return True
+
+
+def _detect_chaise_side(main_request, chaise_request) -> str:
+    main_center_x = (float(main_request.min_x) + float(main_request.max_x)) / 2.0
+    chaise_center_x = (float(chaise_request.min_x) + float(chaise_request.max_x)) / 2.0
+    return "right" if chaise_center_x > main_center_x else "left"
+
+
+def _build_back_corner_post(plan, *, inputs: BackInputs, main_request, chaise_request, chaise_side: str) -> None:
+    frame_thickness_mm = max(1.0, float(inputs.frame_thickness_mm))
+    back_height_mm = float(inputs.back.frame.height_above_seat_mm)
+    back_offset_y_mm = float(inputs.back.frame.offset_y_mm)
+    back_rail_depth_mm = max(1.0, float(inputs.back.frame.rail_depth_mm))
+    back_base_z = float(inputs.base_frame_top_z)
+    back_top_z = max(back_base_z + 1.0, float(inputs.seat_support_top_z) + back_height_mm)
+    post_height_mm = max(1.0, back_top_z - back_base_z)
+    post_center_z = back_base_z + (post_height_mm / 2.0)
+
+    if chaise_side == "right":
+        join_main_x = float(main_request.max_x)
+        join_chaise_x = float(chaise_request.min_x)
+    else:
+        join_main_x = float(main_request.min_x)
+        join_chaise_x = float(chaise_request.max_x)
+    post_width_mm = max(frame_thickness_mm, abs(join_chaise_x - join_main_x) + frame_thickness_mm)
+    post_center_x = (join_main_x + join_chaise_x) / 2.0
+
+    seat_back_rail_outer_face_y = float(main_request.back_plane_y) - (frame_thickness_mm / 2.0)
+    back_frame_plane_y = seat_back_rail_outer_face_y + back_offset_y_mm
+    post_center_y = back_frame_plane_y - (back_rail_depth_mm / 2.0)
+
+    plan.primitives.append(
+        Primitive(
+            name="back_corner_post",
+            shape="beam",
+            dimensions_mm=(post_width_mm, back_rail_depth_mm, post_height_mm),
+            location_mm=(post_center_x, post_center_y, post_center_z),
+        )
+    )
+    plan.anchors.append(
+        Anchor(
+            name="back_corner_post",
+            location_mm=(post_center_x, post_center_y, post_center_z),
+        )
+    )
 
 
 def build_back(plan, inputs: BackInputs, ctx: BuildContext) -> None:
     helpers = _coerce_back_helpers(inputs)
     if inputs.layout_kind == "corner" and inputs.requests:
+        requests_by_name = {request.slot_name: request for request in inputs.requests}
+        slots_used: list[str] = []
+        main_request = requests_by_name.get("main_back")
+        chaise_request = requests_by_name.get("chaise_back")
+        chaise_side = None
+        main_skip: tuple[str, ...] = ()
+        chaise_skip: tuple[str, ...] = ()
+        if main_request is not None and chaise_request is not None:
+            chaise_side = _detect_chaise_side(main_request, chaise_request)
+            if chaise_side == "right":
+                main_skip = ("back_rail_right",)
+                chaise_skip = ("back_rail_left",)
+            else:
+                main_skip = ("back_rail_left",)
+                chaise_skip = ("back_rail_right",)
+
+        if main_request is not None:
+            if _build_corner_back_segment(
+                plan=plan,
+                inputs=inputs,
+                ctx=ctx,
+                request=main_request,
+                name_prefix="main",
+                skip_base_names=main_skip,
+            ):
+                slots_used.append("main_back")
+        if chaise_request is not None:
+            if _build_corner_back_segment(
+                plan=plan,
+                inputs=inputs,
+                ctx=ctx,
+                request=chaise_request,
+                name_prefix="chaise",
+                skip_base_names=chaise_skip,
+            ):
+                slots_used.append("chaise_back")
+        if main_request is not None and chaise_request is not None:
+            _build_back_corner_post(
+                plan,
+                inputs=inputs,
+                main_request=main_request,
+                chaise_request=chaise_request,
+                chaise_side=chaise_side or "right",
+            )
         emit_simple(
             ctx.diag,
             run_id=ctx.run_id,
@@ -793,46 +890,10 @@ def build_back(plan, inputs: BackInputs, ctx: BuildContext) -> None:
             path="back.strategy",
             source="computed",
             payload={
-                "strategy": "corner",
+                "strategy": "corner_continuous_rails",
                 "handler": "build_corner_back_segments",
-                "requests": len(inputs.requests),
-            },
-            reason="dispatch corner back strategy",
-        )
-        requests_by_name = {request.slot_name: request for request in inputs.requests}
-        slots_used: list[str] = []
-        main_request = requests_by_name.get("main_back")
-        if main_request is not None:
-            if _build_corner_back_segment(
-                plan=plan,
-                inputs=inputs,
-                ctx=ctx,
-                request=main_request,
-                name_prefix="main",
-            ):
-                slots_used.append("main_back")
-        chaise_request = requests_by_name.get("chaise_back")
-        if chaise_request is not None:
-            if _build_corner_back_segment(
-                plan=plan,
-                inputs=inputs,
-                ctx=ctx,
-                request=chaise_request,
-                name_prefix="chaise",
-            ):
-                slots_used.append("chaise_back")
-        emit_simple(
-            ctx.diag,
-            run_id=ctx.run_id,
-            stage="build",
-            component="back",
-            code="STRATEGY_SELECTED",
-            severity=Severity.INFO,
-            path="back.slot_strategy",
-            source="computed",
-            payload={
-                "strategy": "corner_slot_aware",
                 "slots_used": slots_used,
+                "chaise_side": chaise_side,
             },
             reason="built corner back by slots",
         )

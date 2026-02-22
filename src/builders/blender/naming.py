@@ -15,6 +15,7 @@ PREFIXES: dict[str, str] = {
     "back": "back_",
     "back_main": "back_main_",
     "back_chaise": "back_chaise_",
+    "back_corner": "back_corner_",
     "back_rail": "back_rail_",
     "back_slat": "back_slat_",
     "beam": "beam_",

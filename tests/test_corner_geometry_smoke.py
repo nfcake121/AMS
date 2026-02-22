@@ -30,6 +30,7 @@ def test_corner_geometry_smoke() -> None:
         primitive_names = [primitive.name for primitive in plan.primitives]
         assert any(name.startswith("back_main_") for name in primitive_names)
         assert any(name.startswith("back_chaise_") for name in primitive_names)
+        assert "back_corner_post" in primitive_names
         assert any(name.startswith("arm_main_left_") or name.startswith("arm_main_right_") for name in primitive_names)
         assert any(name.startswith("arm_chaise_free_end_") for name in primitive_names)
         assert not any(name.startswith("arm_join_") or name.startswith("arm_join_blocked_") for name in primitive_names)
