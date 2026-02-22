@@ -46,6 +46,28 @@ def test_llm_stub_enabled_does_not_change_plan_snapshot(monkeypatch, tmp_path):
     assert isinstance(payload.get("diagnostics_summary"), dict)
 
 
+def test_llm_stub_validate_only_writes_validation_without_plan_change(monkeypatch, tmp_path):
+    ir = _load_ir("data/examples/sofa_ir.json")
+    ir.setdefault("arms", {})["width_mm"] = -10
+    baseline = plan_to_snapshot(_build_silent(ir))
+
+    out_path = tmp_path / "llm_stub_validate_only.json"
+    monkeypatch.setenv("AMS_LLM_ENABLED", "1")
+    monkeypatch.setenv("AMS_LLM_VALIDATE_ONLY", "1")
+    monkeypatch.setenv("AMS_LLM_PATCHES_JSON", str(out_path))
+    with_stub = plan_to_snapshot(_build_silent(ir))
+
+    assert with_stub == baseline
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert payload.get("enabled") is True
+    assert isinstance(payload.get("suggestions"), list)
+    validation = payload.get("validation")
+    assert isinstance(validation, dict)
+    assert validation.get("mode") == "validate_only"
+    assert isinstance(validation.get("valid_ops"), list)
+    assert isinstance(validation.get("rejected"), list)
+
+
 def test_llm_stub_summary_contains_required_build_codes():
     ir = _load_ir("data/examples/sofa_ir.json")
     suggestions = maybe_generate_suggestions_from_env(

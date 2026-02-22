@@ -10,6 +10,7 @@ from src.builders.blender.spec.types import (
     BackSlatsSpec,
     BackSpec,
     BackStrapsSpec,
+    CornerSpec,
     CenterPostSpec,
     LegsSpec,
     ResolveDiagnostics,
@@ -35,6 +36,9 @@ _BACK_SLAT_LAYOUT_VALUES = {"full", "split_center"}
 _BACK_SUPPORT_MODES = {"panel", "slats", "straps"}
 _BACK_ATTACH_MODES = {"seat_rear_beam", "none"}
 _LEGS_KNOWN_FAMILIES = {"block", "tapered_cone", "cylindrical"}
+_CORNER_LAYOUT_VALUES = {"corner", "l_shape"}
+_CORNER_SIDE_VALUES = {"left", "right"}
+_CORNER_JOIN_MODE_VALUES = {"shared_corner_post"}
 
 
 def _warn(
@@ -195,6 +199,102 @@ def _canonical_choice(
                 new=fallback,
             )
     return fallback
+
+
+def _is_corner_layout(layout_raw) -> bool:
+    if not isinstance(layout_raw, str):
+        return False
+    return layout_raw.strip().lower() in _CORNER_LAYOUT_VALUES
+
+
+def _resolve_corner_spec(ir: dict, diagnostics: ResolveDiagnostics) -> CornerSpec | None:
+    if not _is_corner_layout(ir.get("layout", "straight")):
+        return None
+
+    corner_raw = ir.get("corner")
+    if corner_raw is None:
+        corner = {}
+    elif isinstance(corner_raw, dict):
+        corner = corner_raw
+    else:
+        corner = {}
+        _warn(
+            diagnostics,
+            code="RESOLVE_ENUM_FALLBACK",
+            message="corner must be an object; fallback to defaults",
+            path="corner",
+            old=type(corner_raw).__name__,
+            new={},
+        )
+
+    side_raw = corner.get("chaise_side", "right")
+    if isinstance(side_raw, str):
+        side = side_raw.strip().lower()
+    else:
+        side = ""
+    if side not in _CORNER_SIDE_VALUES:
+        _warn(
+            diagnostics,
+            code="RESOLVE_ENUM_FALLBACK",
+            message="unsupported corner.chaise_side fallback to right",
+            path="corner.chaise_side",
+            old=side_raw,
+            new="right",
+        )
+        side = "right"
+
+    join_mode_raw = corner.get("join_mode", "shared_corner_post")
+    if isinstance(join_mode_raw, str):
+        join_mode = join_mode_raw.strip().lower()
+    else:
+        join_mode = ""
+    if join_mode not in _CORNER_JOIN_MODE_VALUES:
+        _warn(
+            diagnostics,
+            code="RESOLVE_ENUM_FALLBACK",
+            message="unsupported corner.join_mode fallback to shared_corner_post",
+            path="corner.join_mode",
+            old=join_mode_raw,
+            new="shared_corner_post",
+        )
+        join_mode = "shared_corner_post"
+
+    chaise_extra_depth_mm = _as_float(corner.get("chaise_extra_depth_mm", 300.0), 300.0)
+    clamped_chaise_extra_depth_mm = max(0.0, min(1200.0, float(chaise_extra_depth_mm)))
+    if clamped_chaise_extra_depth_mm != float(chaise_extra_depth_mm):
+        _warn(
+            diagnostics,
+            code="RESOLVE_CLAMP_APPLIED",
+            message="corner.chaise_extra_depth_mm clamped to [0.0, 1200.0]",
+            path="corner.chaise_extra_depth_mm",
+            old=chaise_extra_depth_mm,
+            new=clamped_chaise_extra_depth_mm,
+            source="computed",
+            meta={"min": 0.0, "max": 1200.0},
+        )
+    chaise_extra_depth_mm = clamped_chaise_extra_depth_mm
+
+    corner_gap_mm = _as_float(corner.get("corner_gap_mm", 0.0), 0.0)
+    clamped_corner_gap_mm = max(0.0, min(50.0, float(corner_gap_mm)))
+    if clamped_corner_gap_mm != float(corner_gap_mm):
+        _warn(
+            diagnostics,
+            code="RESOLVE_CLAMP_APPLIED",
+            message="corner.corner_gap_mm clamped to [0.0, 50.0]",
+            path="corner.corner_gap_mm",
+            old=corner_gap_mm,
+            new=clamped_corner_gap_mm,
+            source="computed",
+            meta={"min": 0.0, "max": 50.0},
+        )
+    corner_gap_mm = clamped_corner_gap_mm
+
+    return CornerSpec(
+        chaise_side=side,
+        chaise_extra_depth_mm=chaise_extra_depth_mm,
+        corner_gap_mm=corner_gap_mm,
+        join_mode=join_mode,
+    )
 
 
 def resolve_back_spec(ir: dict, preset: dict, diagnostics: ResolveDiagnostics) -> BackSpec:
@@ -718,6 +818,7 @@ def resolve(ir: dict, preset_id: str | None = None) -> tuple[ResolvedSpec, Resol
 
     back_spec = resolve_back_spec(ir=ir, preset=preset, diagnostics=diagnostics)
     legs_spec = resolve_legs_spec(ir=ir, preset=preset, diagnostics=diagnostics)
+    corner_spec = _resolve_corner_spec(ir=ir, diagnostics=diagnostics)
 
     resolved = ResolvedSpec(
         style=style,
@@ -729,6 +830,7 @@ def resolve(ir: dict, preset_id: str | None = None) -> tuple[ResolvedSpec, Resol
         ),
         back=back_spec,
         legs=legs_spec,
+        corner=corner_spec,
         seat=None,
     )
     return resolved, diagnostics

@@ -7,11 +7,12 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
 from src.builders.blender.diagnostics import Event, build_diagnostics_summary
+from src.builders.blender.patches.types import PatchOp
+from src.builders.blender.patches.validate import validate_patch_ops
 
 
 def _env_truthy(name: str) -> bool:
@@ -21,26 +22,6 @@ def _env_truthy(name: str) -> bool:
 
 def llm_stub_enabled() -> bool:
     return _env_truthy("AMS_LLM_ENABLED")
-
-
-@dataclass(frozen=True)
-class PatchOp:
-    op: str
-    path: str
-    value: Any
-    reason: str
-    source_event_code: str = ""
-    confidence: float = 0.0
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "op": self.op,
-            "path": self.path,
-            "value": self.value,
-            "reason": self.reason,
-            "source_event_code": self.source_event_code,
-            "confidence": float(self.confidence),
-        }
 
 
 def generate_patch_suggestions(
@@ -74,12 +55,15 @@ def generate_patch_suggestions(
         seen.add(key)
         suggestions.append(
             PatchOp(
-                op="replace",
+                op="set",
                 path=event.path,
                 value=event.resolved_value,
-                reason=reason,
-                source_event_code=code,
-                confidence=confidence,
+                meta={
+                    "source": "llm_stub",
+                    "reason": reason,
+                    "source_event_code": code,
+                    "confidence": confidence,
+                },
             )
         )
     return suggestions
@@ -110,6 +94,14 @@ def maybe_generate_suggestions_from_env(
         metrics=metrics,
         validators=validators,
     )
+    validation_payload: dict[str, Any] | None = None
+    if _env_truthy("AMS_LLM_VALIDATE_ONLY"):
+        valid_ops, rejected = validate_patch_ops(suggestions)
+        validation_payload = {
+            "mode": "validate_only",
+            "valid_ops": [patch.to_dict() for patch in valid_ops],
+            "rejected": rejected,
+        }
     out_path = str(os.environ.get("AMS_LLM_PATCHES_JSON", "")).strip()
     if out_path:
         payload = {
@@ -117,5 +109,7 @@ def maybe_generate_suggestions_from_env(
             "suggestions": [item.to_dict() for item in suggestions],
             "diagnostics_summary": build_diagnostics_summary(events_list),
         }
+        if validation_payload is not None:
+            payload["validation"] = validation_payload
         _write_suggestions(Path(out_path), payload)
     return suggestions

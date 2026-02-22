@@ -57,28 +57,33 @@ def _diag_sink_from_env():
 
 
 def _resolve_spec(ir: dict):
-    from src.builders.blender.spec.ir_validate import ir_schema_validate
     from src.builders.blender.spec.resolve import resolve
-    from src.builders.blender.spec.types import ResolveDiagnostics
 
-    _ok, ir_schema_diagnostics = ir_schema_validate(ir)
-    normalized_ir = ir_schema_diagnostics.normalized_ir
-    resolved_spec, resolve_diagnostics = resolve(normalized_ir, preset_id=normalized_ir.get("preset_id"))
-    merged_diagnostics = ResolveDiagnostics(
-        warnings=[*ir_schema_diagnostics.warnings, *resolve_diagnostics.warnings]
-    )
-    return normalized_ir, resolved_spec, merged_diagnostics
+    return resolve(ir, preset_id=ir.get("preset_id"))
 
 
-def _compute_layout(ir: dict, resolved_spec):
+def _normalize_ir_schema(ir: dict, build_ctx):
+    from src.builders.blender.spec.ir_schema import validate_and_normalize_ir
+
+    return validate_and_normalize_ir(ir=ir, ctx=build_ctx)
+
+
+def _compute_layout(ir: dict, resolved_spec, build_ctx):
     from src.builders.blender.layout import compute_layout
 
-    return compute_layout(ir, resolved_spec)
+    return compute_layout(
+        ir,
+        resolved_spec,
+        diag_sink=build_ctx.diag,
+        run_id=build_ctx.run_id,
+    )
 
 
 def _make_component_inputs(ir: dict, resolved_spec, layout):
     from src.builders.blender.spec.types import (
+        ArmRequest,
         ArmsInputs,
+        BackRequest,
         BackInputs,
         LegsInputs,
         SeatFrameInputs,
@@ -126,6 +131,43 @@ def _make_component_inputs(ir: dict, resolved_spec, layout):
     slat_rail_width_mm = _ir_value(slats, "rail_width_mm", frame_thickness_mm)
     slat_rail_inset_y_mm = _ir_value(slats, "rail_inset_y_mm", slat_margin_y_mm)
 
+    segment_back_plane_by_name = {
+        segment.name: float(segment.back_plane_y)
+        for segment in layout.segments
+        if segment.back_plane_y is not None
+    }
+    arm_requests = tuple(
+        ArmRequest(
+            slot_name=slot.name,
+            segment=slot.segment,
+            allowed=bool(slot.allowed),
+            min_x=float(slot.min_x),
+            max_x=float(slot.max_x),
+            min_y=float(slot.min_y),
+            max_y=float(slot.max_y),
+            min_z=float(slot.min_z),
+            max_z=float(slot.max_z),
+        )
+        for slot in layout.arm_slots
+        if slot.kind == "arm"
+    )
+    back_requests = tuple(
+        BackRequest(
+            slot_name=slot.name,
+            segment=slot.segment,
+            allowed=bool(slot.allowed),
+            min_x=float(slot.min_x),
+            max_x=float(slot.max_x),
+            min_y=float(slot.min_y),
+            max_y=float(slot.max_y),
+            min_z=float(slot.min_z),
+            max_z=float(slot.max_z),
+            back_plane_y=float(segment_back_plane_by_name.get(slot.segment, layout.back_plane_y)),
+        )
+        for slot in layout.back_slots
+        if slot.kind == "back"
+    )
+
     metadata = {
         "seat_count": str(layout.seat_count),
         "legs_family": str(legs_family),
@@ -144,6 +186,19 @@ def _make_component_inputs(ir: dict, resolved_spec, layout):
         slats_enabled=slats_enabled,
         seat_total_width_mm=layout.seat_total_width_mm,
         seat_support_center_z=layout.seat_support_center_z,
+        layout_kind=layout.kind,
+        seat_main_min_x=layout.seat_main_min_x,
+        seat_main_max_x=layout.seat_main_max_x,
+        seat_main_min_y=layout.seat_main_min_y,
+        seat_main_max_y=layout.seat_main_max_y,
+        seat_chaise_min_x=layout.seat_chaise_min_x,
+        seat_chaise_max_x=layout.seat_chaise_max_x,
+        seat_chaise_min_y=layout.seat_chaise_min_y,
+        seat_chaise_max_y=layout.seat_chaise_max_y,
+        corner_join_x=layout.corner_join_x,
+        corner_side=layout.corner_side,
+        corner_join_mode=layout.corner_join_mode,
+        corner_gap_mm=layout.corner_gap_mm,
     )
     seat_slats_inputs = SeatSlatsInputs(
         slats_enabled=slats_enabled,
@@ -165,6 +220,16 @@ def _make_component_inputs(ir: dict, resolved_spec, layout):
         slat_rail_inset_y_mm=slat_rail_inset_y_mm,
         base_frame_top_z=layout.base_frame_top_z,
         seat_support_top_z=layout.seat_support_top_z,
+        layout_kind=layout.kind,
+        seat_main_min_x=layout.seat_main_min_x,
+        seat_main_max_x=layout.seat_main_max_x,
+        seat_main_min_y=layout.seat_main_min_y,
+        seat_main_max_y=layout.seat_main_max_y,
+        seat_chaise_min_x=layout.seat_chaise_min_x,
+        seat_chaise_max_x=layout.seat_chaise_max_x,
+        seat_chaise_min_y=layout.seat_chaise_min_y,
+        seat_chaise_max_y=layout.seat_chaise_max_y,
+        corner_side=layout.corner_side,
     )
     back_inputs = BackInputs(
         back=resolved_spec.back,
@@ -176,6 +241,8 @@ def _make_component_inputs(ir: dict, resolved_spec, layout):
         base_frame_top_z=layout.base_frame_top_z,
         base_frame_center_z=layout.base_frame_center_z,
         back_plane_y=layout.back_plane_y,
+        layout_kind=layout.kind,
+        requests=back_requests,
     )
     arms_inputs = ArmsInputs(
         arms_type=arms_type,
@@ -193,6 +260,8 @@ def _make_component_inputs(ir: dict, resolved_spec, layout):
             if isinstance(ir.get("back_support"), dict)
             else {}
         ),
+        layout_kind=layout.kind,
+        requests=arm_requests,
     )
     legs_inputs = LegsInputs(
         family=resolved_spec.legs.family,
@@ -201,6 +270,12 @@ def _make_component_inputs(ir: dict, resolved_spec, layout):
         frame_thickness_mm=layout.frame_thickness_mm,
         seat_depth_mm=layout.seat_depth_mm,
         base_frame_top_z=layout.base_frame_top_z,
+        layout_kind=layout.kind,
+        seat_chaise_min_x=layout.seat_chaise_min_x,
+        seat_chaise_max_x=layout.seat_chaise_max_x,
+        seat_chaise_min_y=layout.seat_chaise_min_y,
+        seat_chaise_max_y=layout.seat_chaise_max_y,
+        corner_side=layout.corner_side,
     )
     return (
         seat_frame_inputs,
@@ -220,6 +295,11 @@ def _create_build_context():
         debug=_debug_env_enabled(),
         diag=_diag_sink_from_env(),
     )
+
+
+def _env_truthy(name: str) -> bool:
+    value = os.environ.get(name, "")
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _emit_build_start(build_ctx, ir: dict, resolved_spec) -> None:
@@ -277,6 +357,7 @@ def _emit_layout_computed(build_ctx, layout) -> None:
             "seat_depth_mm": float(layout.seat_depth_mm),
             "back_plane_y": float(layout.back_plane_y),
             "floor_z": float(layout.floor_z),
+            "kind": str(layout.kind),
         },
     )
 
@@ -316,16 +397,45 @@ def _build_components(
     )
 
 
-def _maybe_run_llm_stub(ir: dict, resolve_diagnostics) -> None:
+def _validate_llm_suggestions_only(build_ctx, suggestions) -> None:
+    from src.builders.blender.patches.validate import validate_patch_ops
+
+    suggestions_list = list(suggestions)
+    valid_ops, rejected = validate_patch_ops(
+        suggestions_list,
+        diag_sink=build_ctx.diag,
+        run_id=build_ctx.run_id,
+    )
+    emit_simple(
+        build_ctx.diag,
+        run_id=build_ctx.run_id,
+        stage="debug",
+        component="builder",
+        code="LLM_PATCH_VALIDATE_ONLY",
+        severity=Severity.INFO,
+        path="llm_stub",
+        source="computed",
+        reason="validated suggestions only; no apply",
+        resolved_value={
+            "suggested_count": len(suggestions_list),
+            "valid_count": len(valid_ops),
+            "rejected_count": len(rejected),
+        },
+    )
+
+
+def _maybe_run_llm_stub(ir: dict, resolve_diagnostics, build_ctx) -> None:
     try:
         from src.pipeline.llm_stub import maybe_generate_suggestions_from_env
 
-        maybe_generate_suggestions_from_env(
+        suggestions = maybe_generate_suggestions_from_env(
             ir=ir,
             events=resolve_diagnostics.warnings,
             metrics=None,
             validators=None,
         )
+        if _env_truthy("AMS_LLM_VALIDATE_ONLY"):
+            _validate_llm_suggestions_only(build_ctx, suggestions)
     except Exception:
         # LLM stub is optional and must never block the build pipeline.
         return
@@ -337,8 +447,10 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
     Coordinate system: X is width (left/right), Y is depth (front/back),
     Z is up. seat_height_mm defines the top of the seat support board.
     """
-    normalized_ir, resolved_spec, resolve_diagnostics = _resolve_spec(ir)
-    layout = _compute_layout(normalized_ir, resolved_spec)
+    build_ctx = _create_build_context()
+    normalized_ir = _normalize_ir_schema(ir, build_ctx)
+    resolved_spec, resolve_diagnostics = _resolve_spec(normalized_ir)
+    layout = _compute_layout(normalized_ir, resolved_spec, build_ctx)
     (
         seat_frame_inputs,
         seat_slats_inputs,
@@ -349,7 +461,6 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
     ) = _make_component_inputs(normalized_ir, resolved_spec, layout)
 
     plan = BuildPlan(metadata=metadata)
-    build_ctx = _create_build_context()
     _emit_build_start(build_ctx, normalized_ir, resolved_spec)
     _emit_resolve_events(build_ctx, resolve_diagnostics)
     _emit_layout_computed(build_ctx, layout)
@@ -363,5 +474,5 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
         build_ctx=build_ctx,
     )
     finalized = finalize_plan(plan, layout=layout, build_ctx=build_ctx, ir=normalized_ir)
-    _maybe_run_llm_stub(ir=normalized_ir, resolve_diagnostics=resolve_diagnostics)
+    _maybe_run_llm_stub(ir=normalized_ir, resolve_diagnostics=resolve_diagnostics, build_ctx=build_ctx)
     return finalized

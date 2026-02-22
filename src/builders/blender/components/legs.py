@@ -27,9 +27,37 @@ def _legs_height_mm(inputs: LegsInputs) -> float:
     return float(height)
 
 
+def _append_leg_with_handler(
+    *,
+    plan,
+    handler,
+    handler_name: str,
+    family: str,
+    name: str,
+    dimensions_mm: tuple[float, float, float],
+    location_mm: tuple[float, float, float],
+) -> None:
+    if handler_name == "leg_passthrough":
+        build_leg_passthrough_strategy(
+            plan=plan,
+            family=family,
+            name=name,
+            dimensions_mm=dimensions_mm,
+            location_mm=location_mm,
+        )
+        return
+    handler(
+        plan=plan,
+        name=name,
+        dimensions_mm=dimensions_mm,
+        location_mm=location_mm,
+    )
+
+
 def build_legs(plan, inputs: LegsInputs, ctx: BuildContext) -> None:
     legs_family = _legs_family(inputs)
     legs_height_mm = _legs_height_mm(inputs)
+    layout_kind = str(inputs.layout_kind or "straight")
 
     strategy_dispatch = {
         "block": ("leg_block", build_leg_block_strategy),
@@ -51,10 +79,11 @@ def build_legs(plan, inputs: LegsInputs, ctx: BuildContext) -> None:
         path="legs.family",
         source="computed",
         payload={
-            "key": {"family": legs_family},
+            "strategy": "corner" if layout_kind == "corner" else "straight",
+            "key": {"family": legs_family, "layout_kind": layout_kind},
             "handler": handler_name,
         },
-        resolved_value={"family": legs_family},
+        resolved_value={"family": legs_family, "layout_kind": layout_kind},
         reason="dispatch legs build strategy",
     )
 
@@ -77,18 +106,51 @@ def build_legs(plan, inputs: LegsInputs, ctx: BuildContext) -> None:
             float(inputs.frame_thickness_mm),
             float(legs_height_mm),
         )
-        if handler_name == "leg_passthrough":
-            build_leg_passthrough_strategy(
-                plan=plan,
-                family=legs_family,
-                name=primitive_name,
-                dimensions_mm=primitive_dimensions,
-                location_mm=point,
-            )
+        _append_leg_with_handler(
+            plan=plan,
+            handler=handler,
+            handler_name=handler_name,
+            family=legs_family,
+            name=primitive_name,
+            dimensions_mm=primitive_dimensions,
+            location_mm=point,
+        )
+
+    if (
+        layout_kind == "corner"
+        and inputs.seat_chaise_min_x is not None
+        and inputs.seat_chaise_max_x is not None
+        and inputs.seat_chaise_min_y is not None
+        and inputs.seat_chaise_max_y is not None
+    ):
+        chaise_min_x = float(inputs.seat_chaise_min_x)
+        chaise_max_x = float(inputs.seat_chaise_max_x)
+        chaise_min_y = float(inputs.seat_chaise_min_y)
+        chaise_max_y = float(inputs.seat_chaise_max_y)
+        side = str(inputs.corner_side or "right")
+        if side == "left":
+            outer_x = chaise_min_x + (inputs.frame_thickness_mm / 2.0)
         else:
-            handler(
+            outer_x = chaise_max_x - (inputs.frame_thickness_mm / 2.0)
+        back_y = chaise_min_y + (inputs.frame_thickness_mm / 2.0)
+        front_y = chaise_max_y - (inputs.frame_thickness_mm / 2.0)
+        chaise_leg_points = [
+            (outer_x, back_y, legs_center_z),
+            (outer_x, front_y, legs_center_z),
+        ]
+        primitive_dimensions = (
+            float(inputs.frame_thickness_mm),
+            float(inputs.frame_thickness_mm),
+            float(legs_height_mm),
+        )
+        for index, point in enumerate(chaise_leg_points, start=1):
+            plan.anchors.append(Anchor(name=f"leg_chaise_point_{index}", location_mm=point))
+            _append_leg_with_handler(
                 plan=plan,
-                name=primitive_name,
+                handler=handler,
+                handler_name=handler_name,
+                family=legs_family,
+                name=f"leg_chaise_{index}",
                 dimensions_mm=primitive_dimensions,
                 location_mm=point,
             )

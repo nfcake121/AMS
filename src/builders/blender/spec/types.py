@@ -82,12 +82,85 @@ class LegsSpec:
 
 
 @dataclass(frozen=True)
+class CornerSpec:
+    chaise_side: str
+    chaise_extra_depth_mm: float
+    corner_gap_mm: float
+    join_mode: str
+
+
+@dataclass(frozen=True)
+class LayoutSegment:
+    name: str
+    min_x: float
+    max_x: float
+    min_y: float
+    max_y: float
+    min_z: float
+    max_z: float
+    back_plane_y: float | None = None
+
+
+@dataclass(frozen=True)
+class LayoutSlot:
+    name: str
+    segment: str
+    kind: str
+    allowed: bool
+    min_x: float
+    max_x: float
+    min_y: float
+    max_y: float
+    min_z: float
+    max_z: float
+
+
+@dataclass(frozen=True)
+class LayoutJoin:
+    join_mode: str
+    min_x: float
+    max_x: float
+    min_y: float
+    max_y: float
+    min_z: float
+    max_z: float
+
+
+@dataclass(frozen=True)
+class ArmRequest:
+    slot_name: str
+    segment: str
+    allowed: bool
+    min_x: float
+    max_x: float
+    min_y: float
+    max_y: float
+    min_z: float
+    max_z: float
+
+
+@dataclass(frozen=True)
+class BackRequest:
+    slot_name: str
+    segment: str
+    allowed: bool
+    min_x: float
+    max_x: float
+    min_y: float
+    max_y: float
+    min_z: float
+    max_z: float
+    back_plane_y: float
+
+
+@dataclass(frozen=True)
 class ResolvedSpec:
     style: str
     preset_id: str
     arms: ArmsSpec
     back: BackSpec
     legs: LegsSpec
+    corner: CornerSpec | None = None
     seat: object | None = None
 
 
@@ -127,6 +200,35 @@ class Layout:
     base_frame_center_z: float
     back_base_y: float
     back_plane_y: float
+    kind: str = "straight"
+    seat_main_min_x: float = 0.0
+    seat_main_max_x: float = 0.0
+    seat_main_min_y: float = 0.0
+    seat_main_max_y: float = 0.0
+    seat_main_min_z: float = 0.0
+    seat_main_max_z: float = 0.0
+    seat_chaise_min_x: float | None = None
+    seat_chaise_max_x: float | None = None
+    seat_chaise_min_y: float | None = None
+    seat_chaise_max_y: float | None = None
+    seat_chaise_min_z: float | None = None
+    seat_chaise_max_z: float | None = None
+    corner_join_x: float | None = None
+    corner_side: str | None = None
+    corner_join_mode: str | None = None
+    corner_gap_mm: float = 0.0
+    chaise_width_mm: float | None = None
+    chaise_depth_mm: float | None = None
+    overall_min_x: float = 0.0
+    overall_max_x: float = 0.0
+    overall_min_y: float = 0.0
+    overall_max_y: float = 0.0
+    overall_min_z: float = 0.0
+    overall_max_z: float = 0.0
+    segments: tuple[LayoutSegment, ...] = ()
+    arm_slots: tuple[LayoutSlot, ...] = ()
+    back_slots: tuple[LayoutSlot, ...] = ()
+    join: LayoutJoin | None = None
 
 
 @dataclass(frozen=True)
@@ -139,6 +241,19 @@ class SeatFrameInputs:
     slats_enabled: bool
     seat_total_width_mm: float
     seat_support_center_z: float
+    layout_kind: str = "straight"
+    seat_main_min_x: float = 0.0
+    seat_main_max_x: float = 0.0
+    seat_main_min_y: float = 0.0
+    seat_main_max_y: float = 0.0
+    seat_chaise_min_x: float | None = None
+    seat_chaise_max_x: float | None = None
+    seat_chaise_min_y: float | None = None
+    seat_chaise_max_y: float | None = None
+    corner_join_x: float | None = None
+    corner_side: str | None = None
+    corner_join_mode: str | None = None
+    corner_gap_mm: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -162,6 +277,16 @@ class SeatSlatsInputs:
     slat_rail_inset_y_mm: float
     base_frame_top_z: float
     seat_support_top_z: float
+    layout_kind: str = "straight"
+    seat_main_min_x: float = 0.0
+    seat_main_max_x: float = 0.0
+    seat_main_min_y: float = 0.0
+    seat_main_max_y: float = 0.0
+    seat_chaise_min_x: float | None = None
+    seat_chaise_max_x: float | None = None
+    seat_chaise_min_y: float | None = None
+    seat_chaise_max_y: float | None = None
+    corner_side: str | None = None
 
 
 @dataclass(frozen=True)
@@ -175,6 +300,8 @@ class BackInputs:
     base_frame_top_z: float
     base_frame_center_z: float
     back_plane_y: float
+    layout_kind: str = "straight"
+    requests: tuple[BackRequest, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -190,6 +317,8 @@ class ArmsInputs:
     back_height_mm: float
     arms_config: dict[str, Any]
     back_support_config: dict[str, Any]
+    layout_kind: str = "straight"
+    requests: tuple[ArmRequest, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -200,3 +329,9 @@ class LegsInputs:
     frame_thickness_mm: float
     seat_depth_mm: float
     base_frame_top_z: float
+    layout_kind: str = "straight"
+    seat_chaise_min_x: float | None = None
+    seat_chaise_max_x: float | None = None
+    seat_chaise_min_y: float | None = None
+    seat_chaise_max_y: float | None = None
+    corner_side: str | None = None

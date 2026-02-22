@@ -130,6 +130,11 @@ def test_style_smoke_matrix(monkeypatch):
             ),
             None,
         ),
+        (
+            "corner_right_smoke",
+            _load_ir("data/examples/sofa_ir_corner_right_v01.json"),
+            None,
+        ),
     ]
 
     for case_name, ir, golden_ir_path in cases:
