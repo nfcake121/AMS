@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import List, Tuple
 
 from src.builders.blender.components.back_strategies import (
@@ -840,46 +841,55 @@ def build_back(plan, inputs: BackInputs, ctx: BuildContext) -> None:
         slots_used: list[str] = []
         main_request = requests_by_name.get("main_back")
         chaise_request = requests_by_name.get("chaise_back")
-        chaise_side = None
-        main_skip: tuple[str, ...] = ()
-        chaise_skip: tuple[str, ...] = ()
-        if main_request is not None and chaise_request is not None:
-            chaise_side = _detect_chaise_side(main_request, chaise_request)
-            if chaise_side == "right":
-                main_skip = ("back_rail_right",)
-                chaise_skip = ("back_rail_left",)
-            else:
-                main_skip = ("back_rail_left",)
-                chaise_skip = ("back_rail_right",)
 
-        if main_request is not None:
-            if _build_corner_back_segment(
-                plan=plan,
-                inputs=inputs,
-                ctx=ctx,
-                request=main_request,
-                name_prefix="main",
-                skip_base_names=main_skip,
-            ):
-                slots_used.append("main_back")
-        if chaise_request is not None:
-            if _build_corner_back_segment(
-                plan=plan,
-                inputs=inputs,
-                ctx=ctx,
-                request=chaise_request,
-                name_prefix="chaise",
-                skip_base_names=chaise_skip,
-            ):
-                slots_used.append("chaise_back")
+        built_corner = False
         if main_request is not None and chaise_request is not None:
-            _build_back_corner_post(
-                plan,
-                inputs=inputs,
-                main_request=main_request,
-                chaise_request=chaise_request,
-                chaise_side=chaise_side or "right",
+            is_collinear = (
+                abs(float(main_request.back_plane_y) - float(chaise_request.back_plane_y)) <= 1e-6
+                and abs(float(main_request.min_y) - float(chaise_request.min_y)) <= 1e-6
             )
+            if is_collinear:
+                merged_request = SimpleNamespace(
+                    slot_name="main_back_continuous",
+                    segment="corner",
+                    allowed=bool(main_request.allowed and chaise_request.allowed),
+                    min_x=min(float(main_request.min_x), float(chaise_request.min_x)),
+                    max_x=max(float(main_request.max_x), float(chaise_request.max_x)),
+                    min_y=min(float(main_request.min_y), float(chaise_request.min_y)),
+                    max_y=max(float(main_request.max_y), float(chaise_request.max_y)),
+                    min_z=min(float(main_request.min_z), float(chaise_request.min_z)),
+                    max_z=max(float(main_request.max_z), float(chaise_request.max_z)),
+                    back_plane_y=0.5 * (float(main_request.back_plane_y) + float(chaise_request.back_plane_y)),
+                )
+                if _build_corner_back_segment(
+                    plan=plan,
+                    inputs=inputs,
+                    ctx=ctx,
+                    request=merged_request,
+                    name_prefix="main",
+                ):
+                    slots_used.append("main_back_continuous")
+                built_corner = True
+
+        if not built_corner:
+            if main_request is not None:
+                if _build_corner_back_segment(
+                    plan=plan,
+                    inputs=inputs,
+                    ctx=ctx,
+                    request=main_request,
+                    name_prefix="main",
+                ):
+                    slots_used.append("main_back")
+            if chaise_request is not None:
+                if _build_corner_back_segment(
+                    plan=plan,
+                    inputs=inputs,
+                    ctx=ctx,
+                    request=chaise_request,
+                    name_prefix="chaise",
+                ):
+                    slots_used.append("chaise_back")
         emit_simple(
             ctx.diag,
             run_id=ctx.run_id,
@@ -893,7 +903,7 @@ def build_back(plan, inputs: BackInputs, ctx: BuildContext) -> None:
                 "strategy": "corner_continuous_rails",
                 "handler": "build_corner_back_segments",
                 "slots_used": slots_used,
-                "chaise_side": chaise_side,
+                "split_mode": "merged" if built_corner else "segmented",
             },
             reason="built corner back by slots",
         )

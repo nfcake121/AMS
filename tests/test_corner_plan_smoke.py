@@ -46,8 +46,9 @@ def test_corner_plan_smoke(monkeypatch) -> None:
         assert any(name.startswith("slat_chaise_") for name in primitive_names)
         assert any(name.startswith("leg_chaise_") for name in primitive_names)
         assert any(name.startswith("back_main_") for name in primitive_names)
-        assert any(name.startswith("back_chaise_") for name in primitive_names)
-        assert "back_corner_post" in primitive_names
+        assert not any(name.startswith("back_chaise_") for name in primitive_names)
+        assert "back_main_corner_post" not in primitive_names
+        assert "back_corner_post" not in primitive_names
         assert any(name.startswith("arm_main_left_") or name.startswith("arm_main_right_") for name in primitive_names)
         assert any(name.startswith("arm_chaise_free_end_") for name in primitive_names)
         assert not any(name.startswith("arm_join_") or name.startswith("arm_join_blocked_") for name in primitive_names)

@@ -48,8 +48,8 @@ def test_corner_arms_back_smoke(monkeypatch) -> None:
 
         names = [primitive.name for primitive in plan.primitives]
         assert any(name.startswith("back_main_") for name in names)
-        assert any(name.startswith("back_chaise_") for name in names)
-        assert "back_corner_post" in names
+        assert not any(name.startswith("back_chaise_") for name in names)
+        assert "back_corner_post" not in names
         assert any(name.startswith("arm_chaise_free_end_") for name in names)
         assert any(name.startswith("arm_main_left_") or name.startswith("arm_main_right_") for name in names)
         assert not any(name.startswith("arm_join_") or name.startswith("arm_join_blocked_") for name in names)
@@ -68,3 +68,4 @@ def test_corner_arms_back_smoke(monkeypatch) -> None:
         assert arms_payload.get("profile") == "frame_box_open"
         back_payload = back_events[-1].meta.get("payload", {})
         assert back_payload.get("strategy") == "corner_continuous_rails"
+        assert back_payload.get("split_mode") == "merged"
