@@ -57,9 +57,17 @@ def _diag_sink_from_env():
 
 
 def _resolve_spec(ir: dict):
+    from src.builders.blender.spec.ir_validate import ir_schema_validate
     from src.builders.blender.spec.resolve import resolve
+    from src.builders.blender.spec.types import ResolveDiagnostics
 
-    return resolve(ir, preset_id=ir.get("preset_id"))
+    _ok, ir_schema_diagnostics = ir_schema_validate(ir)
+    normalized_ir = ir_schema_diagnostics.normalized_ir
+    resolved_spec, resolve_diagnostics = resolve(normalized_ir, preset_id=normalized_ir.get("preset_id"))
+    merged_diagnostics = ResolveDiagnostics(
+        warnings=[*ir_schema_diagnostics.warnings, *resolve_diagnostics.warnings]
+    )
+    return normalized_ir, resolved_spec, merged_diagnostics
 
 
 def _compute_layout(ir: dict, resolved_spec):
@@ -329,8 +337,8 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
     Coordinate system: X is width (left/right), Y is depth (front/back),
     Z is up. seat_height_mm defines the top of the seat support board.
     """
-    resolved_spec, resolve_diagnostics = _resolve_spec(ir)
-    layout = _compute_layout(ir, resolved_spec)
+    normalized_ir, resolved_spec, resolve_diagnostics = _resolve_spec(ir)
+    layout = _compute_layout(normalized_ir, resolved_spec)
     (
         seat_frame_inputs,
         seat_slats_inputs,
@@ -338,11 +346,11 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
         arms_inputs,
         legs_inputs,
         metadata,
-    ) = _make_component_inputs(ir, resolved_spec, layout)
+    ) = _make_component_inputs(normalized_ir, resolved_spec, layout)
 
     plan = BuildPlan(metadata=metadata)
     build_ctx = _create_build_context()
-    _emit_build_start(build_ctx, ir, resolved_spec)
+    _emit_build_start(build_ctx, normalized_ir, resolved_spec)
     _emit_resolve_events(build_ctx, resolve_diagnostics)
     _emit_layout_computed(build_ctx, layout)
     _build_components(
@@ -354,6 +362,6 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
         legs_inputs=legs_inputs,
         build_ctx=build_ctx,
     )
-    finalized = finalize_plan(plan, layout=layout, build_ctx=build_ctx, ir=ir)
-    _maybe_run_llm_stub(ir=ir, resolve_diagnostics=resolve_diagnostics)
+    finalized = finalize_plan(plan, layout=layout, build_ctx=build_ctx, ir=normalized_ir)
+    _maybe_run_llm_stub(ir=normalized_ir, resolve_diagnostics=resolve_diagnostics)
     return finalized

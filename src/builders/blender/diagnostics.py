@@ -27,7 +27,7 @@ SEVERITY_MIN = int(Severity.INFO)
 SEVERITY_MAX = int(Severity.FATAL)
 VALID_SEVERITIES = frozenset(SEVERITY_LABELS.keys())
 
-VALID_STAGES = frozenset({"resolve", "layout", "build", "debug"})
+VALID_STAGES = frozenset({"ir_schema", "resolve", "layout", "build", "debug"})
 VALID_SOURCES = frozenset({"ir", "preset", "global", "fallback", "computed"})
 VALID_COMPONENTS = frozenset(
     {"resolver", "layout", "seat_frame", "seat_slats", "back", "arms", "legs", "builder"}
