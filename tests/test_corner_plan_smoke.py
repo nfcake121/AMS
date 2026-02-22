@@ -45,11 +45,11 @@ def test_corner_plan_smoke(monkeypatch) -> None:
         assert any(name.startswith("beam_chaise_") for name in primitive_names)
         assert any(name.startswith("slat_chaise_") for name in primitive_names)
         assert any(name.startswith("leg_chaise_") for name in primitive_names)
-        assert any(name.startswith("back_rail_") or name.startswith("back_slat_") for name in primitive_names)
+        assert any(name.startswith("back_main_") for name in primitive_names)
         assert any(name.startswith("back_chaise_") for name in primitive_names)
-        assert any(name.startswith("arm_left_") or name.startswith("arm_right_") for name in primitive_names)
+        assert any(name.startswith("arm_main_left_") or name.startswith("arm_main_right_") for name in primitive_names)
         assert any(name.startswith("arm_chaise_free_end_") for name in primitive_names)
-        assert not any(name.startswith("arm_join_blocked_") for name in primitive_names)
+        assert not any(name.startswith("arm_join_") or name.startswith("arm_join_blocked_") for name in primitive_names)
 
         for primitive in plan.primitives:
             assert all(math.isfinite(float(value)) for value in primitive.dimensions_mm)
@@ -67,3 +67,5 @@ def test_corner_plan_smoke(monkeypatch) -> None:
             if event.code == "STRATEGY_SELECTED"
         }
         assert {"seat_frame", "seat_slats", "legs", "arms", "back"}.issubset(strategy_components)
+        assert "TOPOLOGY_ARM_SLOTS_RECEIVED" in codes
+        assert "TOPOLOGY_BACK_SLOTS_RECEIVED" in codes

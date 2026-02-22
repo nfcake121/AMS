@@ -12,7 +12,7 @@ from src.builders.blender.components.back_strategies import (
 )
 from src.builders.blender.diagnostics import Severity, emit_simple
 from src.builders.blender.geom_utils import clamp, primitive_bbox_world
-from src.builders.blender.plan_types import Anchor, Primitive
+from src.builders.blender.plan_types import Anchor, BuildPlan, Primitive
 from src.builders.blender.spec.types import BackInputs, BackSpec, BuildContext
 
 
@@ -680,50 +680,104 @@ def _append_back_zone_anchors(plan, back_result: BackBuildResult, helpers: BackB
     )
 
 
-def _build_back_chaise_from_requests(plan, inputs: BackInputs, ctx: BuildContext, helpers: BackBuildHelpers) -> None:
-    back_height_mm = float(inputs.back.frame.height_above_seat_mm)
-    back_thickness_mm = max(1.0, float(inputs.back.frame.thickness_mm))
-    back_offset_y_mm = float(inputs.back.frame.offset_y_mm)
-    back_bottom_z = helpers.base_frame_top_z
-    back_top_z = max(back_bottom_z + 1.0, helpers.seat_support_top_z + back_height_mm)
-    back_span_z = max(1.0, back_top_z - back_bottom_z)
-    back_center_z = back_bottom_z + (back_span_z / 2.0)
-
-    chaise_request = None
-    for request in inputs.requests:
-        if request.slot_name == "chaise_back":
-            chaise_request = request
-            break
-    if chaise_request is None:
-        return
-    if not chaise_request.allowed:
-        emit_simple(
-            ctx.diag,
-            run_id=ctx.run_id,
-            stage="build",
-            component="back",
-            code="SLOT_SKIPPED",
-            severity=Severity.INFO,
-            path="back.requests.chaise_back",
-            source="computed",
-            reason="slot is blocked",
-            payload={"slot": "chaise_back", "segment": "chaise"},
-        )
-        return
-
-    panel_width_mm = max(1.0, float(chaise_request.max_x) - float(chaise_request.min_x))
-    panel_center_x = (float(chaise_request.min_x) + float(chaise_request.max_x)) / 2.0
-    panel_center_y = float(chaise_request.back_plane_y) + back_offset_y_mm - (back_thickness_mm / 2.0)
-    panel_center = (panel_center_x, panel_center_y, back_center_z)
-    plan.primitives.append(
-        Primitive(
-            name="back_chaise_panel",
-            shape="board",
-            dimensions_mm=(panel_width_mm, back_thickness_mm, back_span_z),
-            location_mm=panel_center,
-        )
+def _emit_slot_skipped(ctx: BuildContext, slot_name: str, segment: str, reason: str) -> None:
+    emit_simple(
+        ctx.diag,
+        run_id=ctx.run_id,
+        stage="build",
+        component="back",
+        code="BUILD_SLOT_SKIPPED",
+        severity=Severity.INFO,
+        path=f"back.requests.{slot_name}",
+        source="computed",
+        reason=reason,
+        payload={"slot": slot_name, "segment": segment},
     )
-    plan.anchors.append(Anchor(name="back_chaise_zone", location_mm=panel_center))
+
+
+def _rename_corner_back_name(prefix: str, name: str) -> str:
+    normalized_prefix = str(prefix).strip().lower()
+    if not normalized_prefix:
+        normalized_prefix = "segment"
+    tail = name[5:] if name.startswith("back_") else name
+    return f"back_{normalized_prefix}_{tail}"
+
+
+def _append_corner_back_segment(
+    plan,
+    *,
+    temp_plan: BuildPlan,
+    name_prefix: str,
+    center_x: float,
+) -> None:
+    x_shift = float(center_x)
+    for primitive in temp_plan.primitives:
+        plan.primitives.append(
+            Primitive(
+                name=_rename_corner_back_name(name_prefix, primitive.name),
+                shape=primitive.shape,
+                dimensions_mm=primitive.dimensions_mm,
+                location_mm=(
+                    float(primitive.location_mm[0]) + x_shift,
+                    float(primitive.location_mm[1]),
+                    float(primitive.location_mm[2]),
+                ),
+                rotation_deg=primitive.rotation_deg,
+                params=dict(primitive.params),
+            )
+        )
+    for anchor in temp_plan.anchors:
+        plan.anchors.append(
+            Anchor(
+                name=_rename_corner_back_name(name_prefix, anchor.name),
+                location_mm=(
+                    float(anchor.location_mm[0]) + x_shift,
+                    float(anchor.location_mm[1]),
+                    float(anchor.location_mm[2]),
+                ),
+            )
+        )
+
+
+def _build_corner_back_segment(
+    *,
+    plan,
+    inputs: BackInputs,
+    ctx: BuildContext,
+    request,
+    name_prefix: str,
+) -> bool:
+    if not request.allowed:
+        _emit_slot_skipped(
+            ctx,
+            slot_name=request.slot_name,
+            segment=request.segment,
+            reason="slot blocked",
+        )
+        return False
+
+    segment_width_mm = max(1.0, float(request.max_x) - float(request.min_x))
+    segment_center_x = (float(request.min_x) + float(request.max_x)) / 2.0
+    helpers = BackBuildHelpers(
+        seat_total_width_mm=segment_width_mm,
+        total_width_mm=segment_width_mm,
+        seat_depth_mm=float(inputs.seat_depth_mm),
+        frame_thickness_mm=float(inputs.frame_thickness_mm),
+        seat_support_top_z=float(inputs.seat_support_top_z),
+        base_frame_top_z=float(inputs.base_frame_top_z),
+        base_frame_center_z=float(inputs.base_frame_center_z),
+        back_y=float(request.back_plane_y),
+    )
+    temp_plan = BuildPlan(metadata={})
+    back_result = _build_back_from_spec(plan=temp_plan, spec=inputs.back, ctx=ctx, helpers=helpers)
+    _append_back_zone_anchors(plan=temp_plan, back_result=back_result, helpers=helpers)
+    _append_corner_back_segment(
+        plan=plan,
+        temp_plan=temp_plan,
+        name_prefix=name_prefix,
+        center_x=segment_center_x,
+    )
+    return True
 
 
 def build_back(plan, inputs: BackInputs, ctx: BuildContext) -> None:
@@ -740,14 +794,48 @@ def build_back(plan, inputs: BackInputs, ctx: BuildContext) -> None:
             source="computed",
             payload={
                 "strategy": "corner",
-                "handler": "main_detailed_plus_chaise_panel",
+                "handler": "build_corner_back_segments",
                 "requests": len(inputs.requests),
             },
             reason="dispatch corner back strategy",
         )
-        back_result = _build_back_from_spec(plan=plan, spec=inputs.back, ctx=ctx, helpers=helpers)
-        _append_back_zone_anchors(plan=plan, back_result=back_result, helpers=helpers)
-        _build_back_chaise_from_requests(plan=plan, inputs=inputs, ctx=ctx, helpers=helpers)
+        requests_by_name = {request.slot_name: request for request in inputs.requests}
+        slots_used: list[str] = []
+        main_request = requests_by_name.get("main_back")
+        if main_request is not None:
+            if _build_corner_back_segment(
+                plan=plan,
+                inputs=inputs,
+                ctx=ctx,
+                request=main_request,
+                name_prefix="main",
+            ):
+                slots_used.append("main_back")
+        chaise_request = requests_by_name.get("chaise_back")
+        if chaise_request is not None:
+            if _build_corner_back_segment(
+                plan=plan,
+                inputs=inputs,
+                ctx=ctx,
+                request=chaise_request,
+                name_prefix="chaise",
+            ):
+                slots_used.append("chaise_back")
+        emit_simple(
+            ctx.diag,
+            run_id=ctx.run_id,
+            stage="build",
+            component="back",
+            code="STRATEGY_SELECTED",
+            severity=Severity.INFO,
+            path="back.slot_strategy",
+            source="computed",
+            payload={
+                "strategy": "corner_slot_aware",
+                "slots_used": slots_used,
+            },
+            reason="built corner back by slots",
+        )
         return
     if inputs.layout_kind == "corner" and not inputs.requests:
         emit_simple(
