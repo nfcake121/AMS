@@ -79,7 +79,7 @@ def _compute_layout(ir: dict, resolved_spec, build_ctx):
     )
 
 
-def _make_component_inputs(ir: dict, resolved_spec, layout):
+def _make_component_inputs(ir: dict, resolved_spec, layout, *, build_ctx=None):
     from src.builders.blender.spec.types import (
         ArmRequest,
         ArmsInputs,
@@ -167,6 +167,52 @@ def _make_component_inputs(ir: dict, resolved_spec, layout):
         for slot in layout.back_slots
         if slot.kind == "back"
     )
+
+    if build_ctx is not None and layout.kind == "corner":
+        emit_simple(
+            build_ctx.diag,
+            run_id=build_ctx.run_id,
+            stage="build",
+            component="builder",
+            code="TOPOLOGY_ARM_SLOTS_RECEIVED",
+            severity=Severity.INFO,
+            path="layout.arm_slots",
+            source="computed",
+            reason="corner arm slots passed to inputs",
+            meta={
+                "slots": [
+                    {
+                        "name": request.slot_name,
+                        "segment": request.segment,
+                        "allowed": bool(request.allowed),
+                        "role": "arm",
+                    }
+                    for request in arm_requests
+                ]
+            },
+        )
+        emit_simple(
+            build_ctx.diag,
+            run_id=build_ctx.run_id,
+            stage="build",
+            component="builder",
+            code="TOPOLOGY_BACK_SLOTS_RECEIVED",
+            severity=Severity.INFO,
+            path="layout.back_slots",
+            source="computed",
+            reason="corner back slots passed to inputs",
+            meta={
+                "slots": [
+                    {
+                        "name": request.slot_name,
+                        "segment": request.segment,
+                        "allowed": bool(request.allowed),
+                        "role": "back",
+                    }
+                    for request in back_requests
+                ]
+            },
+        )
 
     metadata = {
         "seat_count": str(layout.seat_count),
@@ -458,7 +504,12 @@ def build_plan_from_ir(ir: dict) -> BuildPlan:
         arms_inputs,
         legs_inputs,
         metadata,
-    ) = _make_component_inputs(normalized_ir, resolved_spec, layout)
+    ) = _make_component_inputs(
+        normalized_ir,
+        resolved_spec,
+        layout,
+        build_ctx=build_ctx,
+    )
 
     plan = BuildPlan(metadata=metadata)
     _emit_build_start(build_ctx, normalized_ir, resolved_spec)
