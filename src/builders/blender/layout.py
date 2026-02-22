@@ -227,6 +227,7 @@ def compute_layout(
             arm_slots=arm_slots,
             back_slots=back_slots,
             join=None,
+            corner_topology={},
         )
 
     corner = spec.corner
@@ -386,6 +387,15 @@ def compute_layout(
         ),
     )
 
+    corner_topology = {
+        "main_left_allowed": bool(any(slot.name == "main_left" and slot.allowed for slot in arm_slots)),
+        "main_right_allowed": bool(any(slot.name == "main_right" and slot.allowed for slot in arm_slots)),
+        "chaise_free_end_allowed": bool(any(slot.name == "chaise_free_end" and slot.allowed for slot in arm_slots)),
+        "join_blocked": bool(any(slot.name == "join_blocked" and (not slot.allowed) for slot in arm_slots)),
+        "main_back_allowed": bool(any(slot.name == "main_back" and slot.allowed for slot in back_slots)),
+        "chaise_back_allowed": bool(any(slot.name == "chaise_back" and slot.allowed for slot in back_slots)),
+    }
+
     if diag_sink is not None:
         _emit_corner_layout_events(
             diag_sink=diag_sink,
@@ -448,4 +458,5 @@ def compute_layout(
         arm_slots=arm_slots,
         back_slots=back_slots,
         join=join,
+        corner_topology=corner_topology,
     )

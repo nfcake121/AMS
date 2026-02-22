@@ -245,6 +245,7 @@ def _make_component_inputs(ir: dict, resolved_spec, layout, *, build_ctx=None):
         corner_side=layout.corner_side,
         corner_join_mode=layout.corner_join_mode,
         corner_gap_mm=layout.corner_gap_mm,
+        corner_topology=dict(layout.corner_topology),
     )
     seat_slats_inputs = SeatSlatsInputs(
         slats_enabled=slats_enabled,

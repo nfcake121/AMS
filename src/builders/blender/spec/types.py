@@ -229,6 +229,7 @@ class Layout:
     arm_slots: tuple[LayoutSlot, ...] = ()
     back_slots: tuple[LayoutSlot, ...] = ()
     join: LayoutJoin | None = None
+    corner_topology: dict[str, bool] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -254,6 +255,7 @@ class SeatFrameInputs:
     corner_side: str | None = None
     corner_join_mode: str | None = None
     corner_gap_mm: float = 0.0
+    corner_topology: dict[str, bool] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

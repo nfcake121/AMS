@@ -79,6 +79,9 @@ def test_layout_corner_topology_contract() -> None:
 
     back_slot_by_name = {slot.name: slot for slot in layout.back_slots}
     assert {"main_back", "chaise_back"}.issubset(set(back_slot_by_name))
+    assert layout.corner_topology
+    assert bool(layout.corner_topology.get("join_blocked")) is True
+    assert bool(layout.corner_topology.get("chaise_free_end_allowed")) is True
 
     assert layout.join is not None
     assert layout.join.join_mode == "shared_corner_post"
@@ -89,4 +92,3 @@ def test_layout_corner_topology_contract() -> None:
     layout_codes = {event.code for event in sink.events if event.stage == "layout"}
     assert "LAYOUT_KIND_CORNER_SELECTED" in layout_codes
     assert "LAYOUT_TOPOLOGY_COMPUTED" in layout_codes
-

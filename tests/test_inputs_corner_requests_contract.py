@@ -40,7 +40,7 @@ def test_inputs_corner_requests_contract() -> None:
     layout = compute_layout(normalized_ir, resolved_spec, diag_sink=sink, run_id=ctx.run_id)
 
     (
-        _seat_frame_inputs,
+        seat_frame_inputs,
         _seat_slats_inputs,
         back_inputs,
         arms_inputs,
@@ -63,6 +63,8 @@ def test_inputs_corner_requests_contract() -> None:
     back_slot_names = {request.slot_name for request in back_inputs.requests}
     assert {"main_back", "chaise_back"}.issubset(back_slot_names)
     assert all(request.allowed for request in back_inputs.requests)
+    assert bool(seat_frame_inputs.corner_topology.get("join_blocked")) is True
+    assert bool(seat_frame_inputs.corner_topology.get("main_back_allowed")) is True
 
     codes = [event.code for event in sink.events]
     assert "TOPOLOGY_ARM_SLOTS_RECEIVED" in codes
