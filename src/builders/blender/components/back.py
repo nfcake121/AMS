@@ -795,43 +795,102 @@ def _detect_chaise_side(main_request, chaise_request) -> str:
     return "right" if chaise_center_x > main_center_x else "left"
 
 
-def _build_back_corner_post(plan, *, inputs: BackInputs, main_request, chaise_request, chaise_side: str) -> None:
-    frame_thickness_mm = max(1.0, float(inputs.frame_thickness_mm))
-    back_height_mm = float(inputs.back.frame.height_above_seat_mm)
-    back_offset_y_mm = float(inputs.back.frame.offset_y_mm)
-    back_rail_depth_mm = max(1.0, float(inputs.back.frame.rail_depth_mm))
-    back_base_z = float(inputs.base_frame_top_z)
-    back_top_z = max(back_base_z + 1.0, float(inputs.seat_support_top_z) + back_height_mm)
-    post_height_mm = max(1.0, back_top_z - back_base_z)
-    post_center_z = back_base_z + (post_height_mm / 2.0)
+def _append_corner_back_return_segment(
+    plan,
+    *,
+    temp_plan: BuildPlan,
+    name_prefix: str,
+    return_center_x: float,
+    return_center_y: float,
+    local_back_center_y: float,
+    chaise_side: str,
+) -> None:
+    side_sign = 1.0 if chaise_side == "right" else -1.0
+    skip_names = {"back_rail_center"}
+    for primitive in temp_plan.primitives:
+        if primitive.name in skip_names:
+            continue
+        local_x = float(primitive.location_mm[0])
+        local_y = float(primitive.location_mm[1])
+        local_z = float(primitive.location_mm[2])
+        delta_y = local_y - float(local_back_center_y)
+        new_x = float(return_center_x) + (side_sign * delta_y)
+        new_y = float(return_center_y) + local_x
+        dim_x, dim_y, dim_z = primitive.dimensions_mm
+        plan.primitives.append(
+            Primitive(
+                name=_rename_corner_back_name(name_prefix, primitive.name),
+                shape=primitive.shape,
+                dimensions_mm=(float(dim_y), float(dim_x), float(dim_z)),
+                location_mm=(new_x, new_y, local_z),
+                rotation_deg=(0.0, 0.0, 90.0),
+                params=dict(primitive.params),
+            )
+        )
+    for anchor in temp_plan.anchors:
+        if anchor.name in skip_names:
+            continue
+        local_x = float(anchor.location_mm[0])
+        local_y = float(anchor.location_mm[1])
+        local_z = float(anchor.location_mm[2])
+        delta_y = local_y - float(local_back_center_y)
+        new_x = float(return_center_x) + (side_sign * delta_y)
+        new_y = float(return_center_y) + local_x
+        plan.anchors.append(
+            Anchor(
+                name=_rename_corner_back_name(name_prefix, anchor.name),
+                location_mm=(new_x, new_y, local_z),
+            )
+        )
 
+
+def _build_corner_back_return_segment(
+    *,
+    plan,
+    inputs: BackInputs,
+    ctx: BuildContext,
+    main_request,
+    chaise_request,
+) -> bool:
+    if not bool(chaise_request.allowed):
+        _emit_slot_skipped(
+            ctx,
+            slot_name=chaise_request.slot_name,
+            segment=chaise_request.segment,
+            reason="slot blocked",
+        )
+        return False
+    return_length_mm = max(1.0, float(chaise_request.max_y) - float(chaise_request.min_y))
+    chaise_side = _detect_chaise_side(main_request, chaise_request)
+    helpers = BackBuildHelpers(
+        seat_total_width_mm=return_length_mm,
+        total_width_mm=return_length_mm,
+        seat_depth_mm=float(inputs.seat_depth_mm),
+        frame_thickness_mm=float(inputs.frame_thickness_mm),
+        seat_support_top_z=float(inputs.seat_support_top_z),
+        base_frame_top_z=float(inputs.base_frame_top_z),
+        base_frame_center_z=float(inputs.base_frame_center_z),
+        back_y=float(chaise_request.back_plane_y),
+    )
+    temp_plan = BuildPlan(metadata={})
+    back_result = _build_back_from_spec(plan=temp_plan, spec=inputs.back, ctx=ctx, helpers=helpers)
+    _append_back_zone_anchors(plan=temp_plan, back_result=back_result, helpers=helpers)
+    rail_depth_mm = max(1.0, float(inputs.back.frame.rail_depth_mm))
     if chaise_side == "right":
-        join_main_x = float(main_request.max_x)
-        join_chaise_x = float(chaise_request.min_x)
+        return_center_x = float(chaise_request.min_x) + (rail_depth_mm / 2.0)
     else:
-        join_main_x = float(main_request.min_x)
-        join_chaise_x = float(chaise_request.max_x)
-    post_width_mm = max(frame_thickness_mm, abs(join_chaise_x - join_main_x) + frame_thickness_mm)
-    post_center_x = (join_main_x + join_chaise_x) / 2.0
-
-    seat_back_rail_outer_face_y = float(main_request.back_plane_y) - (frame_thickness_mm / 2.0)
-    back_frame_plane_y = seat_back_rail_outer_face_y + back_offset_y_mm
-    post_center_y = back_frame_plane_y - (back_rail_depth_mm / 2.0)
-
-    plan.primitives.append(
-        Primitive(
-            name="back_corner_post",
-            shape="beam",
-            dimensions_mm=(post_width_mm, back_rail_depth_mm, post_height_mm),
-            location_mm=(post_center_x, post_center_y, post_center_z),
-        )
+        return_center_x = float(chaise_request.max_x) - (rail_depth_mm / 2.0)
+    return_center_y = (float(chaise_request.min_y) + float(chaise_request.max_y)) / 2.0
+    _append_corner_back_return_segment(
+        plan,
+        temp_plan=temp_plan,
+        name_prefix="return",
+        return_center_x=return_center_x,
+        return_center_y=return_center_y,
+        local_back_center_y=back_result.back_panel_center[1],
+        chaise_side=chaise_side,
     )
-    plan.anchors.append(
-        Anchor(
-            name="back_corner_post",
-            location_mm=(post_center_x, post_center_y, post_center_z),
-        )
-    )
+    return True
 
 
 def build_back(plan, inputs: BackInputs, ctx: BuildContext) -> None:
@@ -841,8 +900,8 @@ def build_back(plan, inputs: BackInputs, ctx: BuildContext) -> None:
         slots_used: list[str] = []
         main_request = requests_by_name.get("main_back")
         chaise_request = requests_by_name.get("chaise_back")
-
-        built_corner = False
+        built_main_continuous = False
+        built_return = False
         if main_request is not None and chaise_request is not None:
             is_collinear = (
                 abs(float(main_request.back_plane_y) - float(chaise_request.back_plane_y)) <= 1e-6
@@ -869,10 +928,8 @@ def build_back(plan, inputs: BackInputs, ctx: BuildContext) -> None:
                     name_prefix="main",
                 ):
                     slots_used.append("main_back_continuous")
-                built_corner = True
-
-        if not built_corner:
-            if main_request is not None:
+                    built_main_continuous = True
+            else:
                 if _build_corner_back_segment(
                     plan=plan,
                     inputs=inputs,
@@ -881,15 +938,37 @@ def build_back(plan, inputs: BackInputs, ctx: BuildContext) -> None:
                     name_prefix="main",
                 ):
                     slots_used.append("main_back")
-            if chaise_request is not None:
-                if _build_corner_back_segment(
+                    built_main_continuous = True
+            if built_main_continuous:
+                built_return = _build_corner_back_return_segment(
                     plan=plan,
                     inputs=inputs,
                     ctx=ctx,
-                    request=chaise_request,
-                    name_prefix="chaise",
-                ):
-                    slots_used.append("chaise_back")
+                    main_request=main_request,
+                    chaise_request=chaise_request,
+                )
+                if built_return:
+                    slots_used.append("back_return")
+        elif main_request is not None:
+            if _build_corner_back_segment(
+                plan=plan,
+                inputs=inputs,
+                ctx=ctx,
+                request=main_request,
+                name_prefix="main",
+            ):
+                slots_used.append("main_back")
+                built_main_continuous = True
+        elif chaise_request is not None:
+            if _build_corner_back_segment(
+                plan=plan,
+                inputs=inputs,
+                ctx=ctx,
+                request=chaise_request,
+                name_prefix="main",
+            ):
+                slots_used.append("main_back")
+                built_main_continuous = True
         emit_simple(
             ctx.diag,
             run_id=ctx.run_id,
@@ -903,7 +982,7 @@ def build_back(plan, inputs: BackInputs, ctx: BuildContext) -> None:
                 "strategy": "corner_continuous_rails",
                 "handler": "build_corner_back_segments",
                 "slots_used": slots_used,
-                "split_mode": "merged" if built_corner else "segmented",
+                "split_mode": "merged+return" if built_return else "single_segment",
             },
             reason="built corner back by slots",
         )
